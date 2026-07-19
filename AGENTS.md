@@ -17,6 +17,14 @@ for design, crul copy paste( in input url and can covert to that format) crul, h
 - Request text fields that support placeholders use `VariableInput`. Raw request bodies pass variable statuses to `CodeEditor`, which refreshes CodeMirror decorations through a compartment without remounting the editor.
 - Missing variables are fixed through `environmentStore`; quick-add can target an existing environment or create and activate a new one.
 
+## Phase 5 implementation notes
+
+- The app-global workspace registry and settings live in SQLite `app.db`; frontend access goes through `src/lib/registry/` only and Rust SQL stays in `src-tauri/src/db.rs`.
+- Workspace request data remains spread files rooted at each registry row's `root_path`; `StorageProvider` stays unchanged and `LocalJsonProvider` is configured per window.
+- Workspace boot and replacement use `src/lib/workspaces/lifecycle.ts` to reset and rehydrate collection, request, environment, history, and per-workspace session state.
+- New windows receive `?workspaceId=` and register their workspace with the Rust window map so repeated opens focus the existing window.
+- Git synchronization stays behind provider-level hooks: Rust owns init/clone/commit/push/pull, while local writes always complete before a sync warning is shown.
+
 ## Implementation and refactoring rules
 
 - Preserve existing behavior, imports, exports, backward compatibility, and current naming conventions.

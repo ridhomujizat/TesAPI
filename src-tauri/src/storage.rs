@@ -18,10 +18,12 @@ fn storage_root(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn resolve(app: &AppHandle, relative: &str) -> Result<PathBuf, String> {
     let path = Path::new(relative);
-    if path.is_absolute()
-        || path
-            .components()
-            .any(|part| matches!(part, Component::ParentDir))
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+    if path
+        .components()
+        .any(|part| matches!(part, Component::ParentDir))
     {
         return Err("Storage path must stay inside TesAPI app data".into());
     }
@@ -37,7 +39,7 @@ fn sync_parent(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn atomic_write_at(path: &Path, contents: &str) -> Result<(), String> {
+pub(crate) fn atomic_write_at(path: &Path, contents: &str) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or("Storage file has no parent directory")?;

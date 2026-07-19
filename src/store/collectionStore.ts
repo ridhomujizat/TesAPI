@@ -22,6 +22,7 @@ interface State {
   deleteNode: (collectionId: string, nodeId: string) => Promise<string[]>;
   duplicateNode: (collectionId: string, nodeId: string) => Promise<string>;
   moveNode: (sourceCollectionId: string, nodeId: string, targetCollectionId: string, targetParentId: string | null, targetIndex?: number) => Promise<void>;
+  reset: () => void;
 }
 
 type Normalized = State['collectionsById'][string];
@@ -237,4 +238,5 @@ export const useCollectionStore = create<State>((set, get) => ({
       summaries: state.summaries.map((summary) => summary.id === sourceCollectionId ? { ...summary, ...counts(sourceNext) } : summary.id === targetCollectionId ? { ...summary, ...counts(targetNext) } : summary),
     }));
   },
+  reset: () => set({ initialized: false, summaries: [], collectionsById: {}, expandedIds: {} }),
 }));

@@ -6,16 +6,20 @@ import { RequestBuilder } from './components/request/RequestBuilder';
 import { ResponseViewer } from './components/response/ResponseViewer';
 import { SaveRequestModal } from './components/SaveRequestModal';
 import { CloseTabDialog } from './components/CloseTabDialog';
+import { CreateWorkspaceModal } from './components/workspace/CreateWorkspaceModal';
+import { WorkspaceSwitchDialog } from './components/workspace/WorkspaceSwitchDialog';
 import { Toast, type ToastMessage } from './components/Toast';
 import { useRequestStore } from './store/requestStore';
 import { useCollectionStore } from './store/collectionStore';
-import { activeVariables, useEnvironmentStore } from './store/environmentStore';
+import { activeVariables } from './store/environmentStore';
 import { sendRequest, friendlyError } from './lib/http';
 import { isTabDirty, normalizeForCompare } from './lib/collections';
 import { uid } from './lib/id';
 import { resolveRequest } from './lib/environments';
 import { onStorageWarning, storageProvider } from './lib/storage/localJson';
-import type { HistoryEntry, SessionState } from './types';
+import { currentSession } from './lib/workspaces/lifecycle';
+import { useWorkspaceController } from './hooks/useWorkspaceController';
+import type { HistoryEntry, SessionState, WorkspaceRecord } from './types';
 import { OPEN_VARIABLES_EVENT } from './components/VariablePopover';
 
 function validUrl(url: string): boolean {
@@ -39,62 +43,38 @@ function EmptyRequestState({ onNewRequest }: { onNewRequest: () => void }) {
 }
 
 export default function App() {
-  const { request, tabs, activeTabId, loading, setLoading, setResponse, setError, closeTab, createRequest, markSaved, restoreSession } = useRequestStore();
+  const { request, tabs, activeTabId, loading, setLoading, setResponse, setError, closeTab, createRequest, markSaved } = useRequestStore();
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
   const [closeTabId, setCloseTabId] = useState<string | null>(null);
   const [closeAfterSave, setCloseAfterSave] = useState<string | null>(null);
-  const [storageReady, setStorageReady] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<'api' | 'environment'>('api');
+  const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
+  const [switchTarget, setSwitchTarget] = useState<WorkspaceRecord | null>(null);
+  const [switchSaving, setSwitchSaving] = useState(false);
+  const [saveForWorkspaceSwitch, setSaveForWorkspaceSwitch] = useState(false);
   const inflight = useRef<string | null>(null);
+  const sessionTimer = useRef(0);
   const hasActiveTab = tabs.some((tab) => tab.id === activeTabId);
 
   const showToast = useCallback((message: ToastMessage) => setToast(message), []);
+  const workspace = useWorkspaceController(showToast);
 
-  useEffect(() => onStorageWarning((message) => showToast({ title: 'Storage recovered', detail: message, tone: 'error' })), [showToast]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        await useCollectionStore.getState().initialize();
-        await useEnvironmentStore.getState().initialize();
-        const session = await storageProvider.loadSession();
-        if (cancelled) return;
-        if (session) {
-          restoreSession(session);
-          for (const id of session.expandedIds ?? []) useCollectionStore.getState().setExpanded(id, true);
-        }
-        setStorageReady(true);
-      } catch (error) {
-        if (!cancelled) showToast({ title: 'Local storage unavailable', detail: String(error), tone: 'error' });
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [restoreSession, showToast]);
+  useEffect(() => onStorageWarning((message) => showToast({ title: 'Storage warning', detail: message, tone: 'error' })), [showToast]);
 
   useEffect(() => {
-    if (!storageReady) return;
-    let timer = 0;
+    if (!workspace.ready || !workspace.current) return;
     const save = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        const requestState = useRequestStore.getState();
-        const collectionState = useCollectionStore.getState();
-        const session: SessionState = {
-          schemaVersion: 1,
-          activeTabId: requestState.activeTabId,
-          tabs: requestState.tabs,
-          expandedIds: Object.entries(collectionState.expandedIds).filter(([, expanded]) => expanded).map(([id]) => id),
-        };
-        void storageProvider.saveSession(session).catch((error) => showToast({ title: 'Could not save session', detail: String(error), tone: 'error' }));
+      window.clearTimeout(sessionTimer.current);
+      sessionTimer.current = window.setTimeout(() => {
+        void storageProvider.saveSession(currentSession()).catch((error) => showToast({ title: 'Could not save session', detail: String(error), tone: 'error' }));
       }, 500);
     };
     const unsubscribeTabs = useRequestStore.subscribe(save);
     const unsubscribeCollections = useCollectionStore.subscribe(save);
     save();
-    return () => { window.clearTimeout(timer); unsubscribeTabs(); unsubscribeCollections(); };
-  }, [showToast, storageReady]);
+    return () => { window.clearTimeout(sessionTimer.current); unsubscribeTabs(); unsubscribeCollections(); };
+  }, [showToast, workspace.current?.id, workspace.ready]);
 
   const appendHistory = useCallback((entry: HistoryEntry) => {
     void storageProvider.appendHistory(entry)
@@ -147,7 +127,7 @@ export default function App() {
     setWorkspaceView('api');
   }, [createRequest]);
 
-  const saveExisting = useCallback(async (tabId = activeTabId) => {
+  const saveExisting = useCallback(async (tabId = activeTabId, notify = true) => {
     const state = useRequestStore.getState();
     const tab = state.tabs.find((item) => item.id === tabId);
     if (!tab?.origin) return false;
@@ -159,9 +139,56 @@ export default function App() {
     await useCollectionStore.getState().saveRequest(tab.origin.collectionId, node.parentId, tab.draft.name || node.name, tab.draft, tab.origin.nodeId);
     if (state.activeTabId === tabId) state.markSaved(tab.origin, tab.draft.name || node.name);
     else useRequestStore.setState((current) => ({ tabs: current.tabs.map((item) => item.id === tabId ? { ...item, savedSnapshot: normalizeForCompare(tab.draft) } : item) }));
-    showToast({ title: 'Request saved' });
+    if (notify) showToast({ title: 'Request saved' });
     return true;
   }, [activeTabId, showToast]);
+
+  const switchSession = useCallback((discard: boolean): SessionState => {
+    const session = currentSession();
+    if (!discard) return session;
+    const tabs = session.tabs.filter((tab) => !isTabDirty(tab));
+    return { ...session, tabs, activeTabId: tabs.some((tab) => tab.id === session.activeTabId) ? session.activeTabId : tabs[0]?.id ?? '' };
+  }, []);
+
+  const performWorkspaceSwitch = useCallback(async (target: WorkspaceRecord, discard = false) => {
+    setSwitchSaving(true);
+    window.clearTimeout(sessionTimer.current);
+    try {
+      await workspace.replace(target, switchSession(discard));
+      setWorkspaceView('api');
+      setSwitchTarget(null);
+    } catch (error) {
+      showToast({ title: 'Could not switch workspace', detail: String(error), tone: 'error' });
+    } finally {
+      setSwitchSaving(false);
+    }
+  }, [showToast, switchSession, workspace]);
+
+  const requestWorkspaceSwitch = useCallback((target: WorkspaceRecord) => {
+    if (target.id === workspace.current?.id) return;
+    if (useRequestStore.getState().tabs.some(isTabDirty)) setSwitchTarget(target);
+    else void performWorkspaceSwitch(target);
+  }, [performWorkspaceSwitch, workspace.current?.id]);
+
+  const saveAllForWorkspaceSwitch = useCallback(async () => {
+    if (!switchTarget) return;
+    setSwitchSaving(true);
+    try {
+      for (const tab of useRequestStore.getState().tabs.filter((item) => item.origin && isTabDirty(item))) await saveExisting(tab.id, false);
+      const unsaved = useRequestStore.getState().tabs.find((tab) => !tab.origin && isTabDirty(tab));
+      if (unsaved) {
+        useRequestStore.getState().focusTab(unsaved.id);
+        setSaveForWorkspaceSwitch(true);
+        setSaveOpen(true);
+        return;
+      }
+      await performWorkspaceSwitch(switchTarget);
+    } catch (error) {
+      showToast({ title: 'Could not save all requests', detail: String(error), tone: 'error' });
+    } finally {
+      setSwitchSaving(false);
+    }
+  }, [performWorkspaceSwitch, saveExisting, showToast, switchTarget]);
 
   const onSave = useCallback(() => {
     const tab = useRequestStore.getState().tabs.find((item) => item.id === useRequestStore.getState().activeTabId);
@@ -203,9 +230,11 @@ export default function App() {
 
   const closingTab = tabs.find((tab) => tab.id === closeTabId);
 
+  if (!workspace.current) return <div className="shell workspace-loading"><span className="spinner accent-spinner" /></div>;
+
   return (
     <div className="shell">
-      <Sidebar onToast={showToast} onWorkspaceChange={setWorkspaceView} />
+      <Sidebar currentWorkspace={workspace.current} workspaces={workspace.workspaces} onToast={showToast} onWorkspaceChange={setWorkspaceView} onCreateWorkspace={() => setCreateWorkspaceOpen(true)} onOpenWorkspace={requestWorkspaceSwitch} onOpenWorkspaceWindow={(target) => void workspace.openNewWindow(target).catch((error) => showToast({ title: 'Could not open workspace window', detail: String(error), tone: 'error' }))} onRenameWorkspace={(id, name) => workspace.rename(id, name).catch((error) => { showToast({ title: 'Could not rename workspace', detail: String(error), tone: 'error' }); })} />
       <main className={workspaceView === 'environment' ? 'main environment-main' : `main${hasActiveTab ? '' : ' empty-request-main'}`}>
         {workspaceView === 'environment' ? <EnvironmentEditor onToast={showToast} /> : hasActiveTab ? <>
           <RequestBuilder onSend={onSend} onCancel={onCancel} onToast={showToast} onSave={onSave} onCloseTab={requestClose} />
@@ -215,7 +244,7 @@ export default function App() {
       <SaveRequestModal
         open={saveOpen}
         request={request}
-        onCancel={() => { setSaveOpen(false); setCloseAfterSave(null); }}
+        onCancel={() => { setSaveOpen(false); setCloseAfterSave(null); if (saveForWorkspaceSwitch) { setSaveForWorkspaceSwitch(false); setSwitchTarget(null); } }}
         onError={(detail) => showToast({ title: 'Could not save request', detail, tone: 'error' })}
         onSaved={(origin, name) => {
           markSaved(origin, name);
@@ -223,6 +252,10 @@ export default function App() {
           showToast({ title: 'Saved to collection' });
           if (closeAfterSave) closeTab(closeAfterSave);
           setCloseAfterSave(null);
+          if (saveForWorkspaceSwitch) {
+            setSaveForWorkspaceSwitch(false);
+            window.queueMicrotask(() => { void saveAllForWorkspaceSwitch(); });
+          }
         }}
       />
       <CloseTabDialog
@@ -242,6 +275,8 @@ export default function App() {
           }
         }}
       />
+      <CreateWorkspaceModal open={createWorkspaceOpen} onCancel={() => setCreateWorkspaceOpen(false)} onCreate={workspace.create} onCreated={(created) => { setCreateWorkspaceOpen(false); requestWorkspaceSwitch(created); }} />
+      <WorkspaceSwitchDialog open={!!switchTarget && !saveForWorkspaceSwitch} workspaceName={switchTarget?.name ?? ''} saving={switchSaving} onCancel={() => setSwitchTarget(null)} onDiscard={() => { if (switchTarget) void performWorkspaceSwitch(switchTarget, true); }} onSaveAll={() => void saveAllForWorkspaceSwitch()} />
       <Toast message={toast} onClose={() => setToast(null)} />
     </div>
   );

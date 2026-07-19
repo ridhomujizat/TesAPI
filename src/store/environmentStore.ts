@@ -17,6 +17,7 @@ interface State {
   setActive: (id: string | null) => Promise<void>;
   setVariables: (id: string, variables: KeyValue[]) => Promise<void>;
   setVariable: (id: string, key: string, value: string) => Promise<void>;
+  reset: () => void;
 }
 
 const empty: EnvironmentsFile = { schemaVersion: 1, activeEnvironmentId: null, environments: [] };
@@ -101,6 +102,10 @@ export const useEnvironmentStore = create<State>((set, get) => ({
     };
     set({ file });
     saveSoon(file);
+  },
+  reset: () => {
+    window.clearTimeout(saveTimer);
+    set({ file: empty, selectedEnvironmentId: null });
   },
 }));
 

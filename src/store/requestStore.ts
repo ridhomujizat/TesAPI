@@ -51,6 +51,7 @@ interface State {
   closeSavedTabs: (collectionId: string, nodeIds?: string[]) => void;
   markSaved: (origin: RequestOrigin, name: string) => void;
   restoreSession: (session: SessionState) => void;
+  reset: () => void;
 }
 
 const idleRequest = newRequest();
@@ -146,4 +147,5 @@ export const useRequestStore = create<State>((set, get) => ({
     const active = tabs.find((tab) => tab.id === session.activeTabId) ?? tabs[0];
     set({ tabs, activeTabId: active?.id ?? '', request: active?.draft ?? newRequest(), response: null, error: null, loading: false });
   },
+  reset: () => set({ tabs: [], activeTabId: '', request: newRequest(), response: null, error: null, loading: false }),
 }));

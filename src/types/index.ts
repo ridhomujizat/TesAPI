@@ -47,9 +47,22 @@ export interface TesApiRequest {
 }
 
 export interface WorkspaceStorage {
-  type: 'local' | 'cloud';
+  type: 'local' | 'git' | 'cloud';
   rootPath?: string;
   git?: { enabled: boolean };
+}
+
+export type WorkspaceSyncType = 'local' | 'git' | 'cloud';
+
+export interface WorkspaceRecord {
+  id: string;
+  name: string;
+  syncType: WorkspaceSyncType;
+  rootPath: string;
+  gitRemote: string | null;
+  gitBranch: string | null;
+  createdAt: number;
+  lastOpenedAt: number | null;
 }
 
 export interface WorkspaceDescriptor {
@@ -66,8 +79,11 @@ export interface WorkspaceMeta {
 
 export interface WorkspaceFile {
   schemaVersion: number;
+  id: string;
   name: string;
-  storage: WorkspaceStorage;
+  syncType: WorkspaceSyncType;
+  gitRemote?: string | null;
+  gitBranch?: string | null;
 }
 
 export interface CollectionSummary {

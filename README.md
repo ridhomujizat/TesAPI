@@ -45,3 +45,11 @@ Environment placeholders are highlighted throughout the request builder: green w
 Click or hover a token to inspect it, edit a resolved value, or add a missing value to an environment. `Cmd/Ctrl+.` opens the token at the caret. The unresolved badge beside Send opens the complete Variables in Request panel, and send-time substitution remains unchanged.
 
 Any new request text field that supports `{{variable}}` placeholders should use `VariableInput`; raw CodeMirror request editors should pass a status map to `CodeEditor`.
+
+## Phase 5 workspaces
+
+TesAPI now keeps the workspace registry and app settings in `tesapi/app.db` using SQLite WAL mode. Existing `workspaces.json` installs migrate once to the database and retain `workspaces.json.migrated` as a backup. Request data is not moved into SQLite: every workspace still owns portable spread files under its configured folder.
+
+The sidebar workspace switcher can replace the current window or open a workspace in a separate Tauri window. Replacing a workspace protects dirty tabs with Save all / Discard / Cancel and restores the destination workspace's own session, collections, history, and environments.
+
+New workspaces can be local or Git-backed. Git workspaces initialize or clone a repository, commit collection/environment saves, push when a remote exists, and fast-forward pull on open. History and session files stay machine-local through the generated `.gitignore`; Cloud remains a disabled "Soon" option.
