@@ -232,8 +232,11 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
     const collection = store.collectionsById[target.collectionId];
     const node = target.nodeId ? collection?.nodesById[target.nodeId] : null;
     if (action === 'new-folder') {
-      const name = window.prompt('Folder name');
-      if (name?.trim()) await store.createFolder(target.collectionId, node?.type === 'folder' ? node.id : null, name);
+      const parentId = node?.type === 'folder' ? node.id : null;
+      const folderId = await store.createFolder(target.collectionId, parentId, 'New folder');
+      collectionState.setExpanded(target.collectionId, true);
+      if (parentId) collectionState.setExpanded(parentId, true);
+      startEditing(target.collectionId, 'New folder', folderId);
     } else if (action === 'new-request') {
       const parentId = node?.type === 'folder' ? node.id : node?.parentId ?? null;
       const request = { ...newRequest(), name: 'New request' };
