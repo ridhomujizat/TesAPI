@@ -3,6 +3,11 @@ import { MethodSelect } from './MethodSelect';
 import { Send as SendIcon } from 'lucide-react';
 import { isCurlCommand, parseCurl } from '../../lib/curl';
 import type { ToastMessage } from '../Toast';
+import { VariableInput } from '../VariableInput';
+import { useRequestVariables } from '../../store/variableStatus';
+import { useEnvironmentStore } from '../../store/environmentStore';
+import { substitute } from '../../lib/environments';
+import { OPEN_VARIABLES_EVENT } from '../VariablePopover';
 
 interface Props {
   onSend: () => void;
@@ -12,12 +17,20 @@ interface Props {
 
 export function UrlBar({ onSend, onCancel, onToast }: Props) {
   const { request, loading, setMethod, setUrl, replaceRequest } = useRequestStore();
+  const variables = useRequestVariables(request);
+  const environmentFile = useEnvironmentStore((state) => state.file);
+  const unresolvedCount = variables.filter((variable) => variable.state === 'unresolved').length;
+  const activeRows = environmentFile.environments.find((environment) => environment.id === environmentFile.activeEnvironmentId)?.variables ?? [];
+  const environmentMap = Object.fromEntries(activeRows.filter((row) => row.enabled && row.key).map((row) => [row.key, row.value]));
+  const unresolvedUrl = new Set<string>();
+  const resolvedUrl = request.url.includes('{{') ? substitute(request.url, environmentMap, unresolvedUrl) : '';
 
   return (
     <div className="urlbar">
       <MethodSelect value={request.method} onChange={setMethod} />
-      <input
+      <VariableInput
         className="url-input"
+        title={resolvedUrl && unresolvedUrl.size === 0 ? `Resolved URL: ${resolvedUrl}` : undefined}
         placeholder="Enter URL or paste cURL"
         spellCheck={false}
         value={request.url}
@@ -39,6 +52,9 @@ export function UrlBar({ onSend, onCancel, onToast }: Props) {
           if (e.key === 'Enter') onSend();
         }}
       />
+      {unresolvedCount > 0 && (
+        <button className="unresolved-badge" aria-label={`${unresolvedCount} unresolved variables`} title="Fix unresolved variables" onClick={() => window.dispatchEvent(new Event(OPEN_VARIABLES_EVENT))}>{unresolvedCount}</button>
+      )}
       {loading ? (
         <button className="send-btn cancel" onClick={onCancel}>
           <span className="spinner" /> Cancel

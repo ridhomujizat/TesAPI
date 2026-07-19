@@ -2,6 +2,7 @@ import { File, Trash2, X } from 'lucide-react';
 import { uid } from '../../lib/id';
 import { applyRowEdit } from '../../lib/params';
 import type { KeyValue, UploadFile } from '../../types';
+import { VariableInput } from '../VariableInput';
 
 interface Props {
   rows: KeyValue[];
@@ -43,7 +44,7 @@ export function FormDataEditor({ rows, onChange }: Props) {
         return (
           <div key={row.id} className={`form-data-row${row.enabled ? '' : ' disabled'}`}>
             <input type="checkbox" checked={row.enabled} onChange={(event) => update(row.id, { enabled: event.target.checked })} />
-            <input className="form-cell mono" placeholder="Key" value={row.key} onChange={(event) => edit(row, { key: event.target.value })} />
+            <VariableInput className="form-cell mono" placeholder="Key" value={row.key} onChange={(event) => edit(row, { key: event.target.value })} />
             <select
               className="form-type"
               aria-label={`Type for ${row.key || 'new field'}`}
@@ -80,7 +81,7 @@ export function FormDataEditor({ rows, onChange }: Props) {
                 {!files.length && <span className="no-file mono">No file selected</span>}
               </div>
             ) : (
-              <input className="form-cell mono" placeholder="Value" value={row.value} onChange={(event) => edit(row, { value: event.target.value })} />
+              <VariableInput className="form-cell mono" placeholder="Value" value={row.value} onChange={(event) => edit(row, { value: event.target.value })} />
             )}
             <input className="form-cell description" placeholder="Description" value={row.description ?? ''} onChange={(event) => edit(row, { description: event.target.value })} />
             <button className="form-delete" title="Remove field" onClick={() => remove(row.id)}><Trash2 size={14} /></button>

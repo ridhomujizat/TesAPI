@@ -1,8 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { json } from '@codemirror/lang-json';
 import { bracketMatching, foldGutter, HighlightStyle, syntaxHighlighting } from '@codemirror/language';
-import { EditorState } from '@codemirror/state';
+import { Compartment, EditorState } from '@codemirror/state';
 import {
   drawSelection,
   EditorView,
@@ -14,6 +14,10 @@ import {
   placeholder,
 } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
+import type { VarStatus } from '../lib/variables';
+import { splitVarSpans } from '../lib/variables';
+import { VariablePopover, type AnchorBox } from './VariablePopover';
+import { variableHighlight } from './editor/varHighlight';
 
 type Language = 'json' | 'text';
 
@@ -25,6 +29,7 @@ interface Props {
   placeholderText?: string;
   ariaLabel: string;
   className?: string;
+  variableStatuses?: ReadonlyMap<string, VarStatus>;
 }
 
 const tesapiHighlight = HighlightStyle.define([
@@ -59,9 +64,14 @@ export function CodeEditor({
   placeholderText,
   ariaLabel,
   className = '',
+  variableStatuses,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const variableCompartment = useRef(new Compartment());
+  const hoverTimer = useRef(0);
+  const closeTimer = useRef(0);
+  const [open, setOpen] = useState<{ name: string; anchor: AnchorBox; pinned: boolean } | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
@@ -81,6 +91,7 @@ export function CodeEditor({
         highlightActiveLineGutter(),
         tesapiTheme,
         syntaxHighlighting(tesapiHighlight),
+        variableCompartment.current.of(variableStatuses ? variableHighlight(variableStatuses) : []),
         ...(language === 'json' ? [json()] : []),
         ...(placeholderText ? [placeholder(placeholderText)] : []),
         EditorState.readOnly.of(readOnly),
@@ -105,5 +116,66 @@ export function CodeEditor({
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
   }, [value]);
 
-  return <div ref={hostRef} className={`code-editor ${className}`} aria-label={ariaLabel} />;
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: variableCompartment.current.reconfigure(variableStatuses ? variableHighlight(variableStatuses) : []) });
+  }, [variableStatuses]);
+
+  const tokenFromEvent = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const token = (event.target as HTMLElement).closest<HTMLElement>('.cm-var-token');
+    if (!token) return null;
+    const rect = token.getBoundingClientRect();
+    return {
+      name: token.dataset.varName ?? '',
+      anchor: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+    };
+  };
+
+  const scheduleClose = () => {
+    window.clearTimeout(hoverTimer.current);
+    if (open?.pinned) return;
+    closeTimer.current = window.setTimeout(() => setOpen(null), 140);
+  };
+
+  return (
+    <div
+      ref={hostRef}
+      className={`code-editor ${className}`}
+      aria-label={ariaLabel}
+      onMouseMove={(event) => {
+        const token = tokenFromEvent(event);
+        if (!token || open?.pinned || open?.name === token.name) return;
+        window.clearTimeout(hoverTimer.current);
+        hoverTimer.current = window.setTimeout(() => setOpen({ ...token, pinned: false }), 200);
+      }}
+      onMouseLeave={scheduleClose}
+      onClick={(event) => {
+        const token = tokenFromEvent(event);
+        if (token) setOpen({ ...token, pinned: true });
+      }}
+      onKeyDown={(event) => {
+        if (!variableStatuses || !((event.metaKey || event.ctrlKey) && event.key === '.')) return;
+        const view = viewRef.current;
+        if (!view) return;
+        const caret = view.state.selection.main.head;
+        const span = splitVarSpans(view.state.doc.toString()).find((item) => 'varName' in item && caret >= item.start && caret <= item.end);
+        if (!span || !('varName' in span)) return;
+        const coords = view.coordsAtPos(span.start);
+        if (!coords) return;
+        event.preventDefault();
+        setOpen({ name: span.varName, pinned: true, anchor: { left: coords.left, right: coords.right, top: coords.top, bottom: coords.bottom } });
+      }}
+    >
+      {open && variableStatuses?.get(open.name) && (
+        <VariablePopover
+          status={variableStatuses.get(open.name)!}
+          anchor={open.anchor}
+          onClose={() => setOpen(null)}
+          onMouseEnter={() => window.clearTimeout(closeTimer.current)}
+          onMouseLeave={scheduleClose}
+        />
+      )}
+    </div>
+  );
 }

@@ -15,6 +15,7 @@ import { uid } from './lib/id';
 import { resolveRequest } from './lib/environments';
 import { onStorageWarning, storageProvider } from './lib/storage/localJson';
 import type { HistoryEntry, SessionState } from './types';
+import { OPEN_VARIABLES_EVENT } from './components/VariablePopover';
 
 function validUrl(url: string): boolean {
   try {
@@ -101,7 +102,13 @@ export default function App() {
 
   const onSend = useCallback(async () => {
     const resolved = resolveRequest(request, activeVariables());
-    if (resolved.unresolved.length) showToast({ title: 'Unresolved environment variables', detail: resolved.unresolved.join(', '), tone: 'error' });
+    if (resolved.unresolved.length) showToast({
+      title: 'Unresolved environment variables',
+      detail: resolved.unresolved.join(', '),
+      tone: 'error',
+      actionLabel: 'Fix',
+      onAction: () => window.dispatchEvent(new Event(OPEN_VARIABLES_EVENT)),
+    });
     const url = resolved.request.url.trim();
     if (!validUrl(url)) {
       setResponse(null);

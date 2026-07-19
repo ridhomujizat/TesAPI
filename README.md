@@ -37,3 +37,11 @@ tesapi/
 ```
 
 All persistence goes through `StorageProvider`; the current implementation is `LocalJsonProvider`. Collection files use atomic Rust writes with a `.bak` copy, history is capped at 1,000 entries, and malformed files are quarantined before backup recovery. New request tabs remain drafts until the Save action creates a collection node. Environment variables use `{{variable}}` placeholders and resolve only when sending or exporting cURL.
+
+## Phase 4 variable UX
+
+Environment placeholders are highlighted throughout the request builder: green when the active environment resolves them and red dashed when the environment is missing, the key is absent, or the row is disabled. URL, params, headers, form-data, URL-encoded, auth, and raw CodeMirror body fields all use the shared token grammar from `src/lib/variables.ts`.
+
+Click or hover a token to inspect it, edit a resolved value, or add a missing value to an environment. `Cmd/Ctrl+.` opens the token at the caret. The unresolved badge beside Send opens the complete Variables in Request panel, and send-time substitution remains unchanged.
+
+Any new request text field that supports `{{variable}}` placeholders should use `VariableInput`; raw CodeMirror request editors should pass a status map to `CodeEditor`.

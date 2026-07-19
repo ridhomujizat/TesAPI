@@ -3,6 +3,7 @@ import type { Body, BodyType } from '../../types';
 import { CodeEditor } from '../CodeEditor';
 import { FormDataEditor } from './FormDataEditor';
 import { KeyValueEditor } from './KeyValueEditor';
+import { useTextVariableStatuses } from '../../store/variableStatus';
 
 const TYPES: { value: BodyType; label: string }[] = [
   { value: 'none', label: 'None' },
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export function BodyEditor({ body, onChange }: Props) {
+  const variableStatuses = useTextVariableStatuses(body.raw ?? '');
   const beautify = () => {
     try {
       onChange({ ...body, raw: JSON.stringify(JSON.parse(body.raw ?? ''), null, 2) });
@@ -66,6 +68,7 @@ export function BodyEditor({ body, onChange }: Props) {
           placeholderText={body.type === 'json' ? '' : ''}
           ariaLabel="Request body"
           className="request-code"
+          variableStatuses={variableStatuses}
           onChange={(raw) => onChange({ ...body, raw })}
         />
       )}

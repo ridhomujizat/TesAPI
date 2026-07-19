@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronRight, Copy, Plus, Save, X } from 'lucide-react';
 import { useRequestStore } from '../../store/requestStore';
 import { useCollectionStore } from '../../store/collectionStore';
@@ -12,6 +12,9 @@ import { KeyValueEditor } from './KeyValueEditor';
 import { BodyEditor } from './BodyEditor';
 import { AuthEditor } from './AuthEditor';
 import type { ToastMessage } from '../Toast';
+import { VariablesPanel } from '../VariablesPanel';
+import { useRequestVariables } from '../../store/variableStatus';
+import { OPEN_VARIABLES_EVENT } from '../VariablePopover';
 
 type Tab = 'params' | 'headers' | 'body' | 'auth';
 
@@ -28,6 +31,7 @@ const activeCount = (rows: { key: string; enabled: boolean }[]) =>
 
 export function RequestBuilder({ onSend, onCancel, onToast, onSave, onCloseTab }: Props) {
   const [tab, setTab] = useState<Tab>('params');
+  const [variablesOpen, setVariablesOpen] = useState(false);
   const { request, tabs: openTabs, activeTabId, focusTab, setParams, setHeaders, setBody, setAuth, createRequest } = useRequestStore();
   const summaries = useCollectionStore((state) => state.summaries);
   const environmentFile = useEnvironmentStore((state) => state.file);
@@ -40,6 +44,13 @@ export function RequestBuilder({ onSend, onCancel, onToast, onSave, onCloseTab }
 
   const paramN = activeCount(request.params);
   const headerN = activeCount(request.headers);
+  const requestVariableStatuses = useRequestVariables(request);
+
+  useEffect(() => {
+    const openVariables = () => setVariablesOpen(true);
+    window.addEventListener(OPEN_VARIABLES_EVENT, openVariables);
+    return () => window.removeEventListener(OPEN_VARIABLES_EVENT, openVariables);
+  }, []);
 
   const tabs: { id: Tab; label: string; count?: number }[] = [
     { id: 'params', label: 'Params', count: paramN || undefined },
@@ -115,6 +126,7 @@ export function RequestBuilder({ onSend, onCancel, onToast, onSave, onCloseTab }
         {tab === 'body' && <BodyEditor body={request.body} onChange={setBody} />}
         {tab === 'auth' && <AuthEditor auth={request.auth} onChange={setAuth} />}
       </div>
+      <VariablesPanel open={variablesOpen} variables={requestVariableStatuses} onClose={() => setVariablesOpen(false)} />
     </section>
   );
 }

@@ -11,6 +11,12 @@ for design, crul copy paste( in input url and can covert to that format) crul, h
 - Collection writes use the Rust atomic-write command and retain a `.bak`; corrupt files are quarantined and recovered when possible.
 - New tabs are drafts until explicit Save; sending only appends history. Environment placeholders resolve at send/cURL-export time.
 
+## Phase 4 implementation notes
+
+- `src/lib/variables.ts` owns the shared `{{variable}}` token grammar, tokenization, and resolution states; send-time substitution imports that grammar and keeps Phase 3 semantics.
+- Request text fields that support placeholders use `VariableInput`. Raw request bodies pass variable statuses to `CodeEditor`, which refreshes CodeMirror decorations through a compartment without remounting the editor.
+- Missing variables are fixed through `environmentStore`; quick-add can target an existing environment or create and activate a new one.
+
 Phase 0 — Foundation & Design (Week 1)
 Goal: Decide the stack and lock the UI layout before writing features.
 

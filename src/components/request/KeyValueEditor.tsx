@@ -2,6 +2,7 @@ import { Trash2 } from 'lucide-react';
 import type { KeyValue } from '../../types';
 import { uid } from '../../lib/id';
 import { applyRowEdit } from '../../lib/params';
+import { VariableInput } from '../VariableInput';
 
 interface Props {
   rows: KeyValue[];
@@ -37,13 +38,13 @@ export function KeyValueEditor({ rows, onChange, showDescription = true }: Props
             checked={row.enabled}
             onChange={(e) => update(row.id, { enabled: e.target.checked })}
           />
-          <input
+          <VariableInput
             className="cell"
             placeholder="Key"
             value={row.key}
             onChange={(e) => edit(row, { key: e.target.value })}
           />
-          <input
+          <VariableInput
             className="cell"
             placeholder="Value"
             value={row.value}

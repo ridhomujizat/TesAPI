@@ -1,5 +1,6 @@
 import { Info } from 'lucide-react';
 import type { Auth } from '../../types';
+import { VariableInput } from '../VariableInput';
 
 interface Props {
   auth: Auth;
@@ -25,7 +26,8 @@ export function AuthEditor({ auth, onChange }: Props) {
         <>
           <div className="field">
             <label>Token</label>
-            <input
+            <VariableInput
+              className="auth-variable-input"
               value={auth.token ?? ''}
               onChange={(e) => set({ token: e.target.value })}
               placeholder="token"
@@ -42,11 +44,12 @@ export function AuthEditor({ auth, onChange }: Props) {
         <>
           <div className="field">
             <label className="label-caps">Username</label>
-            <input value={auth.username ?? ''} onChange={(e) => set({ username: e.target.value })} />
+            <VariableInput className="auth-variable-input" value={auth.username ?? ''} onChange={(e) => set({ username: e.target.value })} />
           </div>
           <div className="field">
             <label className="label-caps">Password</label>
-            <input
+            <VariableInput
+              className="auth-variable-input"
               type="password"
               value={auth.password ?? ''}
               onChange={(e) => set({ password: e.target.value })}
@@ -59,11 +62,11 @@ export function AuthEditor({ auth, onChange }: Props) {
         <>
           <div className="field">
             <label className="label-caps">Key</label>
-            <input value={auth.key ?? ''} onChange={(e) => set({ key: e.target.value })} />
+            <VariableInput className="auth-variable-input" value={auth.key ?? ''} onChange={(e) => set({ key: e.target.value })} />
           </div>
           <div className="field">
             <label className="label-caps">Value</label>
-            <input value={auth.value ?? ''} onChange={(e) => set({ value: e.target.value })} />
+            <VariableInput className="auth-variable-input" value={auth.value ?? ''} onChange={(e) => set({ value: e.target.value })} />
           </div>
           <div className="field">
             <label className="label-caps">Add to</label>

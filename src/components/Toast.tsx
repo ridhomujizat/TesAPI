@@ -5,6 +5,8 @@ export interface ToastMessage {
   title: string;
   detail?: string;
   tone?: 'success' | 'error';
+  actionLabel?: string;
+  onAction?: () => void;
 }
 
 interface Props {
@@ -28,6 +30,7 @@ export function Toast({ message, onClose }: Props) {
         <strong>{message.title}</strong>
         {message.detail && <span>{message.detail}</span>}
       </div>
+      {message.actionLabel && message.onAction && <button className="toast-action" onClick={() => { message.onAction?.(); onClose(); }}>{message.actionLabel}</button>}
       <button className="toast-close" aria-label="Dismiss notification" onClick={onClose}><X size={14} /></button>
     </div>
   );

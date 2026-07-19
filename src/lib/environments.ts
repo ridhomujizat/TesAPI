@@ -1,7 +1,8 @@
 import type { TesApiRequest, KeyValue } from '../types';
+import { VAR_TOKEN_RE } from './variables.ts';
 
 export function substitute(value: string, variables: Record<string, string>, unresolved: Set<string>): string {
-  return value.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (match, key: string) => {
+  return value.replace(new RegExp(VAR_TOKEN_RE.source, VAR_TOKEN_RE.flags), (match, key: string) => {
     const name = key.trim();
     if (!(name in variables)) {
       unresolved.add(name);
