@@ -4,6 +4,13 @@ I want create app with AI, GetMan app clone postman for my personal use. create 
 phase
 for design, crul copy paste( in input url and can covert to that format) crul, history, mock server, mcp ai
 
+## Phase 3 implementation notes
+
+- Local persistence lives under the Tauri app-data `getman/` directory and is accessed through `StorageProvider` / `LocalJsonProvider` only.
+- Collections are nested-tree JSON files, history is capped NDJSON, and session/environment state are separate files.
+- Collection writes use the Rust atomic-write command and retain a `.bak`; corrupt files are quarantined and recovered when possible.
+- New tabs are drafts until explicit Save; sending only appends history. Environment placeholders resolve at send/cURL-export time.
+
 Phase 0 — Foundation & Design (Week 1)
 Goal: Decide the stack and lock the UI layout before writing features.
 

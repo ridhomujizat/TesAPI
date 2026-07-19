@@ -140,7 +140,11 @@ pub async fn send_request(req: GetmanRequest) -> Result<GetmanResponse, HttpErro
     url.query_pairs_mut().clear().extend_pairs(&query);
     let mut builder = client.request(method, url);
 
-    for h in req.headers.iter().filter(|h| h.enabled && !h.key.is_empty()) {
+    for h in req
+        .headers
+        .iter()
+        .filter(|h| h.enabled && !h.key.is_empty())
+    {
         builder = builder.header(&h.key, &h.value);
     }
 
@@ -189,9 +193,9 @@ pub async fn send_request(req: GetmanRequest) -> Result<GetmanResponse, HttpErro
                             let mut part = reqwest::multipart::Part::bytes(file.data.clone())
                                 .file_name(file.name.clone());
                             if !file.mime_type.is_empty() {
-                                part = part
-                                    .mime_str(&file.mime_type)
-                                    .map_err(|e| HttpError::Unknown(format!("Invalid file type: {e}")))?;
+                                part = part.mime_str(&file.mime_type).map_err(|e| {
+                                    HttpError::Unknown(format!("Invalid file type: {e}"))
+                                })?;
                             }
                             form = form.part(p.key.clone(), part);
                         }
@@ -255,7 +259,8 @@ mod tests {
                 }]
             },
             "auth": { "type": "none" }
-        })).unwrap();
+        }))
+        .unwrap();
 
         let form_data = req.body.form_data.unwrap();
         let file = &form_data[0].files.as_ref().unwrap()[0];

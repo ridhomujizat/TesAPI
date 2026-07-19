@@ -1,6 +1,10 @@
 import { useState } from 'react';
-import { ChevronRight, Copy, Plus, X } from 'lucide-react';
+import { ChevronRight, Copy, Plus, Save, X } from 'lucide-react';
 import { useRequestStore } from '../../store/requestStore';
+import { useCollectionStore } from '../../store/collectionStore';
+import { useEnvironmentStore } from '../../store/environmentStore';
+import { isTabDirty } from '../../lib/collections';
+import { resolveRequest } from '../../lib/environments';
 import { methodColor } from '../../lib/methods';
 import { toCurl } from '../../lib/curl';
 import { UrlBar } from './UrlBar';
@@ -15,14 +19,24 @@ interface Props {
   onSend: () => void;
   onCancel: () => void;
   onToast: (message: ToastMessage) => void;
+  onSave: () => void;
+  onCloseTab: (id: string) => void;
 }
 
 const activeCount = (rows: { key: string; enabled: boolean }[]) =>
   rows.filter((r) => r.enabled && r.key !== '').length;
 
-export function RequestBuilder({ onSend, onCancel, onToast }: Props) {
+export function RequestBuilder({ onSend, onCancel, onToast, onSave, onCloseTab }: Props) {
   const [tab, setTab] = useState<Tab>('params');
-  const { request, setParams, setHeaders, setBody, setAuth, createRequest } = useRequestStore();
+  const { request, tabs: openTabs, activeTabId, focusTab, setParams, setHeaders, setBody, setAuth, createRequest } = useRequestStore();
+  const summaries = useCollectionStore((state) => state.summaries);
+  const environmentFile = useEnvironmentStore((state) => state.file);
+  const setActiveEnvironment = useEnvironmentStore((state) => state.setActive);
+  const activeRequestTab = openTabs.find((item) => item.id === activeTabId)!;
+  const dirty = isTabDirty(activeRequestTab);
+  const collectionName = activeRequestTab.origin
+    ? summaries.find((summary) => summary.id === activeRequestTab.origin?.collectionId)?.name
+    : null;
 
   const paramN = activeCount(request.params);
   const headerN = activeCount(request.headers);
@@ -37,23 +51,36 @@ export function RequestBuilder({ onSend, onCancel, onToast }: Props) {
   return (
     <section className="request-builder">
       <div className="open-tabs">
-        <div className="open-tab active">
-          <span className="tab-method" style={{ color: methodColor(request.method) }}>{request.method}</span>
-          <span>{request.name || 'Untitled request'}</span>
-          <X size={12} />
-        </div>
-        {request.name !== 'Create charge' && <div className="open-tab muted"><span className="tab-method post">POST</span><span>Create charge</span></div>}
-        {request.name !== 'Delete user' && <div className="open-tab muted"><span className="tab-method delete">DELETE</span><span>Delete user</span></div>}
+        {openTabs.map((requestTab) => (
+          <div
+            className={`open-tab${requestTab.id === activeTabId ? ' active' : ' muted'}`}
+            key={requestTab.id}
+            role="button"
+            tabIndex={0}
+            onClick={() => focusTab(requestTab.id)}
+            onKeyDown={(event) => { if (event.key === 'Enter') focusTab(requestTab.id); }}
+            onAuxClick={(event) => { if (event.button === 1) onCloseTab(requestTab.id); }}
+          >
+            <span className="tab-method" style={{ color: methodColor(requestTab.draft.method) }}>{requestTab.draft.method}</span>
+            <span className="open-tab-name">{requestTab.draft.name || 'Untitled request'}</span>
+            {isTabDirty(requestTab) && <i className="dirty-dot" />}
+            <button className="tab-close" title="Close tab" onClick={(event) => { event.stopPropagation(); onCloseTab(requestTab.id); }}><X size={12} /></button>
+          </div>
+        ))}
         <button className="icon-button new-tab" title="New request" onClick={createRequest}><Plus size={14} /></button>
       </div>
 
       <div className="breadcrumb">
-        <span>My Workspace</span><ChevronRight size={12} /><strong>{request.name || 'Untitled request'}</strong>
+        <span>{collectionName || 'My Workspace'}</span><ChevronRight size={12} /><strong>{request.name || 'Untitled request'}</strong>
+        <select className="environment-select" aria-label="Active environment" value={environmentFile.activeEnvironmentId ?? ''} onChange={(event) => void setActiveEnvironment(event.target.value || null)}><option value="">No environment</option>{environmentFile.environments.map((environment) => <option key={environment.id} value={environment.id}>{environment.name}</option>)}</select>
         <button
           className="curl-copy"
           title="Copy request as cURL"
           onClick={() => {
-            const copy = navigator.clipboard?.writeText(toCurl(request));
+            const variables = environmentFile.environments.find((environment) => environment.id === environmentFile.activeEnvironmentId)?.variables ?? [];
+            const resolved = resolveRequest(request, variables);
+            if (resolved.unresolved.length) onToast({ title: 'Unresolved environment variables', detail: resolved.unresolved.join(', '), tone: 'error' });
+            const copy = navigator.clipboard?.writeText(toCurl(resolved.request));
             if (!copy) {
               onToast({ title: 'Could not copy cURL', tone: 'error' });
               return;
@@ -63,6 +90,7 @@ export function RequestBuilder({ onSend, onCancel, onToast }: Props) {
         >
           <Copy size={12} /> cURL
         </button>
+        <button className="request-save-button" disabled={!dirty} onClick={onSave}><Save size={12} /> Save</button>
       </div>
 
       <UrlBar onSend={onSend} onCancel={onCancel} onToast={onToast} />
