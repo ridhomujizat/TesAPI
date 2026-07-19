@@ -21,7 +21,7 @@ interface ContextState {
   y: number;
   collectionId: string;
   nodeId?: string;
-  type: 'collection' | 'folder' | 'request';
+  type: 'empty' | 'collection' | 'folder' | 'request';
 }
 
 interface MoveState {
@@ -190,13 +190,16 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
     }
   };
 
-  const createCollection = async () => {
-    const name = window.prompt('Collection name');
-    if (!name?.trim()) return;
-    await collectionState.createCollection(name);
-  };
-
   const startEditing = (collectionId: string, value: string, nodeId?: string) => setEditing({ collectionId, nodeId, value });
+
+  const createCollection = async () => {
+    try {
+      const collectionId = await useCollectionStore.getState().createCollection('New collection');
+      startEditing(collectionId, 'New collection');
+    } catch (error) {
+      onToast({ title: 'Could not create collection', detail: String(error), tone: 'error' });
+    }
+  };
 
   const commitEditing = async () => {
     const target = editing;
@@ -227,38 +230,47 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
     if (!context) return;
     const target = context;
     setContext(null);
-    await useCollectionStore.getState().loadCollection(target.collectionId);
     const store = useCollectionStore.getState();
-    const collection = store.collectionsById[target.collectionId];
+    if (action === 'new-collection') {
+      await createCollection();
+      return;
+    }
+    const collectionId = target.collectionId || store.summaries[0]?.id;
+    if (!collectionId) {
+      onToast({ title: 'Create a collection first' });
+      return;
+    }
+    await store.loadCollection(collectionId);
+    const collection = useCollectionStore.getState().collectionsById[collectionId];
     const node = target.nodeId ? collection?.nodesById[target.nodeId] : null;
     if (action === 'new-folder') {
       const parentId = node?.type === 'folder' ? node.id : null;
-      const folderId = await store.createFolder(target.collectionId, parentId, 'New folder');
-      collectionState.setExpanded(target.collectionId, true);
+      const folderId = await store.createFolder(collectionId, parentId, 'New folder');
+      collectionState.setExpanded(collectionId, true);
       if (parentId) collectionState.setExpanded(parentId, true);
-      startEditing(target.collectionId, 'New folder', folderId);
+      startEditing(collectionId, 'New folder', folderId);
     } else if (action === 'new-request') {
       const parentId = node?.type === 'folder' ? node.id : node?.parentId ?? null;
       const request = { ...newRequest(), name: 'New request' };
-      const nodeId = await store.saveRequest(target.collectionId, parentId, request.name, request);
-      collectionState.setExpanded(target.collectionId, true);
+      const nodeId = await store.saveRequest(collectionId, parentId, request.name, request);
+      collectionState.setExpanded(collectionId, true);
       if (parentId) collectionState.setExpanded(parentId, true);
-      openRequest(request, { collectionId: target.collectionId, nodeId });
-      startEditing(target.collectionId, request.name, nodeId);
+      openRequest(request, { collectionId, nodeId });
+      startEditing(collectionId, request.name, nodeId);
     } else if (action === 'rename') {
-      startEditing(target.collectionId, node?.name ?? collection?.name ?? store.summaries.find((item) => item.id === target.collectionId)?.name ?? '', node?.id);
+      startEditing(collectionId, node?.name ?? collection?.name ?? store.summaries.find((item) => item.id === collectionId)?.name ?? '', node?.id);
     } else if (action === 'duplicate' && node) {
-      const nodeId = await store.duplicateNode(target.collectionId, node.id);
-      const duplicate = useCollectionStore.getState().collectionsById[target.collectionId]?.nodesById[nodeId];
+      const nodeId = await store.duplicateNode(collectionId, node.id);
+      const duplicate = useCollectionStore.getState().collectionsById[collectionId]?.nodesById[nodeId];
       if (duplicate?.type === 'request') {
-        openRequest(duplicate.request, { collectionId: target.collectionId, nodeId });
-        startEditing(target.collectionId, duplicate.name, nodeId);
+        openRequest(duplicate.request, { collectionId, nodeId });
+        startEditing(collectionId, duplicate.name, nodeId);
       }
     } else if (action === 'delete') {
-      setDeleteTarget({ collectionId: target.collectionId, nodeId: node?.id, name: node?.name ?? collection?.name ?? 'this collection', type: node?.type ?? 'collection' });
+      setDeleteTarget({ collectionId, nodeId: node?.id, name: node?.name ?? collection?.name ?? 'this collection', type: node?.type ?? 'collection' });
     } else if (action === 'move' && node) {
       await store.loadAll();
-      setMove({ sourceCollectionId: target.collectionId, nodeId: node.id, location: `${target.collectionId}|` });
+      setMove({ sourceCollectionId: collectionId, nodeId: node.id, location: `${collectionId}|` });
     }
   };
 
@@ -351,7 +363,7 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
   };
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" onContextMenu={(event) => event.preventDefault()}>
       <div className="sidebar-header">
         <button className={`icon-button${view === 'collections' ? ' active' : ''}`} title="Collections" onClick={() => setView('collections')}><Folder size={15} /></button>
         <button className={`icon-button${view === 'history' ? ' active' : ''}`} title="History" onClick={() => setView('history')}><History size={15} /></button>
@@ -364,19 +376,19 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
       </div>
 
       {view === 'collections' && (
-        <div className="tree virtual-tree" ref={treeRef} onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
+        <div className="tree virtual-tree" ref={treeRef} onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)} onContextMenu={(event) => { event.preventDefault(); const fallback = collectionState.summaries.find((summary) => collectionState.expandedIds[summary.id])?.id ?? collectionState.summaries[0]?.id ?? ''; setContext({ x: event.clientX, y: event.clientY, collectionId: fallback, type: 'empty' }); }}>
           {!rows.length && <div className="sidebar-empty"><FolderPlus size={24} /><span>{query ? 'No matching requests' : 'No collections yet'}</span>{!query && <button onClick={() => void createCollection()}>New collection</button>}</div>}
           <div className="virtual-tree-space" style={{ height: rows.length * ROW_HEIGHT }}>
             {rows.slice(start, end).map((row, offset) => {
               const top = (start + offset) * ROW_HEIGHT;
               if (row.type === 'collection') {
                 const expanded = !!collectionState.expandedIds[row.collection.id];
-                return <div className={`virtual-tree-row collection-tree-row${drop?.key === row.key ? ` drop-${drop?.mode}` : ''}`} key={row.key} style={{ top }} onDragOver={(event) => dragOver(event, row)} onDragLeave={() => setDrop(null)} onDrop={() => void dropOn(row)} onContextMenu={(event) => { event.preventDefault(); setContext({ x: event.clientX, y: event.clientY, collectionId: row.collection.id, type: 'collection' }); }}><div className="collection-row-main" role="button" tabIndex={0} onClick={() => void toggleCollection(row.collection)} onKeyDown={(event) => { if (event.key === 'Enter') void toggleCollection(row.collection); }}>{expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<Folder size={13} />{inlineName(row.collection.id, row.collection.name)}<small>{row.collection.requestCount}</small></div></div>;
+                return <div className={`virtual-tree-row collection-tree-row${drop?.key === row.key ? ` drop-${drop?.mode}` : ''}`} key={row.key} style={{ top }} onDragOver={(event) => dragOver(event, row)} onDragLeave={() => setDrop(null)} onDrop={(event) => { event.preventDefault(); void dropOn(row); }} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setContext({ x: event.clientX, y: event.clientY, collectionId: row.collection.id, type: 'collection' }); }}><div className="collection-row-main" role="button" tabIndex={0} onClick={() => void toggleCollection(row.collection)} onKeyDown={(event) => { if (event.key === 'Enter') void toggleCollection(row.collection); }}>{expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<Folder size={13} />{inlineName(row.collection.id, row.collection.name)}<small>{row.collection.requestCount}</small></div></div>;
               }
               const expanded = row.type === 'folder' && !!collectionState.expandedIds[row.node.id];
               const selected = row.type === 'request' && activeOrigin?.collectionId === row.collectionId && activeOrigin.nodeId === row.node.id;
               const isEditing = editing?.collectionId === row.collectionId && editing.nodeId === row.node.id;
-              return <div className={`virtual-tree-row node-tree-row${row.type === 'request' ? ' request' : ''}${selected ? ' selected' : ''}${drop?.key === row.key ? ` drop-${drop?.mode}` : ''}`} key={row.key} role="button" tabIndex={0} style={{ top, paddingLeft: 8 + row.depth * 16 }} draggable={!isEditing} onDragStart={(event) => { setDragging({ collectionId: row.collectionId, nodeId: row.node.id }); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => { setDragging(null); setDrop(null); }} onDragOver={(event) => dragOver(event, row)} onDragLeave={() => setDrop(null)} onDrop={(event) => { event.stopPropagation(); void dropOn(row); }} onContextMenu={(event) => { event.preventDefault(); setContext({ x: event.clientX, y: event.clientY, collectionId: row.collectionId, nodeId: row.node.id, type: row.type }); }} onClick={() => openNode(row.collectionId, row.node)} onKeyDown={(event) => { if (event.key === 'Enter' && !isEditing) openNode(row.collectionId, row.node); }}>{row.type === 'folder' ? (expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />) : <span className="tree-method" style={{ color: methodColor(row.node.type === 'request' ? row.node.request.method : 'GET') }}>{row.node.type === 'request' ? row.node.request.method : ''}</span>}{row.type === 'folder' && <Folder size={13} />}{inlineName(row.collectionId, row.node.name, row.node.id)}</div>;
+              return <div className={`virtual-tree-row node-tree-row${row.type === 'request' ? ' request' : ''}${selected ? ' selected' : ''}${drop?.key === row.key ? ` drop-${drop?.mode}` : ''}`} key={row.key} role="button" tabIndex={0} style={{ top, paddingLeft: 8 + row.depth * 16 }} draggable={!isEditing} onDragStart={(event) => { setDragging({ collectionId: row.collectionId, nodeId: row.node.id }); event.dataTransfer.setData('text/plain', row.node.id); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => { setDragging(null); setDrop(null); }} onDragOver={(event) => dragOver(event, row)} onDragLeave={() => setDrop(null)} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); void dropOn(row); }} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setContext({ x: event.clientX, y: event.clientY, collectionId: row.collectionId, nodeId: row.node.id, type: row.type }); }} onClick={() => openNode(row.collectionId, row.node)} onKeyDown={(event) => { if (event.key === 'Enter' && !isEditing) openNode(row.collectionId, row.node); }}>{row.type === 'folder' ? (expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />) : <span className="tree-method" style={{ color: methodColor(row.node.type === 'request' ? row.node.request.method : 'GET') }}>{row.node.type === 'request' ? row.node.request.method : ''}</span>}{row.type === 'folder' && <Folder size={13} />}{inlineName(row.collectionId, row.node.name, row.node.id)}</div>;
             })}
           </div>
         </div>
@@ -386,7 +398,7 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
 
       {view === 'environments' && <div className="tree environment-editor"><div className="environment-toolbar"><select value={environmentFile.activeEnvironmentId ?? ''} onChange={(event) => void setActiveEnvironment(event.target.value || null)}><option value="">No environment</option>{environmentFile.environments.map((environment) => <option key={environment.id} value={environment.id}>{environment.name}</option>)}</select><button title="New environment" onClick={() => { const name = window.prompt('Environment name'); if (name?.trim()) void createEnvironment(name); }}><Plus size={13} /></button></div>{activeEnvironment ? <div className="environment-rows">{activeEnvironment.variables.map((variable) => <div className={`environment-variable${variable.enabled ? '' : ' disabled'}`} key={variable.id}><input type="checkbox" checked={variable.enabled} onChange={(event) => void setEnvironmentVariables(activeEnvironment.id, activeEnvironment.variables.map((item) => item.id === variable.id ? { ...item, enabled: event.target.checked } : item))} /><input placeholder="Variable" value={variable.key} onChange={(event) => void setEnvironmentVariables(activeEnvironment.id, activeEnvironment.variables.map((item) => item.id === variable.id ? applyRowEdit(item, { key: event.target.value }) : item))} /><input placeholder="Value" value={variable.value} onChange={(event) => void setEnvironmentVariables(activeEnvironment.id, activeEnvironment.variables.map((item) => item.id === variable.id ? applyRowEdit(item, { value: event.target.value }) : item))} /></div>)}</div> : <div className="sidebar-empty"><Layers3 size={24} /><span>No environments yet</span><button onClick={() => { const name = window.prompt('Environment name'); if (name?.trim()) void createEnvironment(name); }}>New environment</button></div>}</div>}
 
-      {context && <div className="context-menu" style={{ left: context.x, top: context.y }} onClick={(event) => event.stopPropagation()}>{context.type !== 'request' && <button onClick={() => runContextAction('new-folder')}>New folder</button>}<button onClick={() => runContextAction('new-request')}>New request</button><button onClick={() => runContextAction('rename')}>Rename</button>{context.type === 'request' && <button onClick={() => runContextAction('duplicate')}>Duplicate</button>}{context.type !== 'collection' && <button onClick={() => runContextAction('move')}>Move to…</button>}<button className="danger" onClick={() => runContextAction('delete')}>Delete</button></div>}
+      {context && <div className="context-menu" style={{ left: context.x, top: context.y }} onClick={(event) => event.stopPropagation()}>{context.type === 'empty' ? <><button onClick={() => runContextAction('new-collection')}>New collection</button><button disabled={!context.collectionId} onClick={() => runContextAction('new-folder')}>New folder</button><button disabled={!context.collectionId} onClick={() => runContextAction('new-request')}>New request</button></> : <>{context.type !== 'request' && <button onClick={() => runContextAction('new-folder')}>New folder</button>}<button onClick={() => runContextAction('new-request')}>New request</button><button onClick={() => runContextAction('rename')}>Rename</button>{context.type === 'request' && <button onClick={() => runContextAction('duplicate')}>Duplicate</button>}{context.type !== 'collection' && <button onClick={() => runContextAction('move')}>Move to…</button>}<button className="danger" onClick={() => runContextAction('delete')}>Delete</button></>}</div>}
 
       {deleteTarget && <div className="modal-backdrop"><section className="close-tab-modal delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="delete-item-title"><div className="save-modal-header"><div><h2 id="delete-item-title">Delete {deleteTarget.type}?</h2><p>“{deleteTarget.name}” will be permanently deleted{deleteTarget.type === 'folder' ? ', including everything inside it' : ''}.</p></div></div><div className="save-modal-actions"><button className="modal-cancel" disabled={deleting} onClick={() => setDeleteTarget(null)}>Cancel</button><button className="modal-delete" disabled={deleting} onClick={() => void confirmDelete()}>{deleting ? 'Deleting…' : 'Delete'}</button></div></section></div>}
 
