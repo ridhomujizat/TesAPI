@@ -19,7 +19,7 @@ interface State {
   createFolder: (collectionId: string, parentId: string | null, name: string) => Promise<string>;
   saveRequest: (collectionId: string, parentId: string | null, name: string, request: GetmanRequest, nodeId?: string) => Promise<string>;
   renameNode: (collectionId: string, nodeId: string, name: string) => Promise<void>;
-  deleteNode: (collectionId: string, nodeId: string) => Promise<void>;
+  deleteNode: (collectionId: string, nodeId: string) => Promise<string[]>;
   duplicateNode: (collectionId: string, nodeId: string) => Promise<string>;
   moveNode: (sourceCollectionId: string, nodeId: string, targetCollectionId: string, targetParentId: string | null, targetIndex?: number) => Promise<void>;
 }
@@ -105,6 +105,7 @@ export const useCollectionStore = create<State>((set, get) => ({
     set((state) => ({
       summaries: state.summaries.filter((summary) => summary.id !== id),
       collectionsById: Object.fromEntries(Object.entries(state.collectionsById).filter(([key]) => key !== id)),
+      expandedIds: Object.fromEntries(Object.entries(state.expandedIds).filter(([key]) => key !== id)),
     }));
   },
   createFolder: async (collectionId, parentId, name) => {
@@ -153,12 +154,19 @@ export const useCollectionStore = create<State>((set, get) => ({
   },
   deleteNode: async (collectionId, nodeId) => {
     const current = get().collectionsById[collectionId];
-    if (!current?.nodesById[nodeId]) return;
+    if (!current?.nodesById[nodeId]) return [];
+    const removedIds = descendants(current, nodeId);
     const next = removeNode(current, nodeId);
     await persist(next);
     const requestCount = Object.values(next.nodesById).filter((node) => node.type === 'request').length;
     const folderCount = Object.values(next.nodesById).filter((node) => node.type === 'folder').length;
-    set((state) => ({ collectionsById: withCollection(state, collectionId, () => next), summaries: state.summaries.map((summary) => summary.id === collectionId ? { ...summary, requestCount, folderCount } : summary) }));
+    const removed = new Set(removedIds);
+    set((state) => ({
+      collectionsById: withCollection(state, collectionId, () => next),
+      summaries: state.summaries.map((summary) => summary.id === collectionId ? { ...summary, requestCount, folderCount } : summary),
+      expandedIds: Object.fromEntries(Object.entries(state.expandedIds).filter(([key]) => !removed.has(key))),
+    }));
+    return removedIds;
   },
   duplicateNode: async (collectionId, nodeId) => {
     const current = get().collectionsById[collectionId];

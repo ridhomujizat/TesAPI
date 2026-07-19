@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Copy, Folder, FolderPlus, History, Layers3, MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Folder, FolderPlus, History, Layers3, Plus, Search, Trash2 } from 'lucide-react';
 import { useCollectionStore } from '../../store/collectionStore';
 import { useEnvironmentStore } from '../../store/environmentStore';
 import { newRequest, useRequestStore } from '../../store/requestStore';
@@ -30,6 +30,19 @@ interface MoveState {
   location: string;
 }
 
+interface EditingState {
+  collectionId: string;
+  nodeId?: string;
+  value: string;
+}
+
+interface DeleteState {
+  collectionId: string;
+  nodeId?: string;
+  name: string;
+  type: 'collection' | 'folder' | 'request';
+}
+
 const ROW_HEIGHT = 32;
 
 function dayLabel(timestamp: string): string {
@@ -48,7 +61,7 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
   const createEnvironment = useEnvironmentStore((state) => state.createEnvironment);
   const setActiveEnvironment = useEnvironmentStore((state) => state.setActive);
   const setEnvironmentVariables = useEnvironmentStore((state) => state.setVariables);
-  const { openRequest, openUnsaved } = useRequestStore();
+  const { tabs, activeTabId, openRequest, openUnsaved, renameSavedTab, closeSavedTabs } = useRequestStore();
   const [view, setView] = useState<View>('collections');
   const [query, setQuery] = useState('');
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -56,6 +69,9 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
   const [statusClass, setStatusClass] = useState<HistoryQuery['statusClass']>('ALL');
   const [context, setContext] = useState<ContextState | null>(null);
   const [move, setMove] = useState<MoveState | null>(null);
+  const [editing, setEditing] = useState<EditingState | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteState | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [dragging, setDragging] = useState<{ collectionId: string; nodeId: string } | null>(null);
   const [drop, setDrop] = useState<{ key: string; mode: DropMode } | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -135,6 +151,7 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
     return result;
   }, [collectionState.collectionsById, collectionState.expandedIds, collectionState.summaries, query]);
   const activeEnvironment = environmentFile.environments.find((environment) => environment.id === environmentFile.activeEnvironmentId);
+  const activeOrigin = tabs.find((tab) => tab.id === activeTabId)?.origin;
   const moveLocations = useMemo(() => {
     if (!move) return [];
     const result: { value: string; label: string; collectionId: string; parentId: string | null }[] = [];
@@ -179,37 +196,93 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
     await collectionState.createCollection(name);
   };
 
+  const startEditing = (collectionId: string, value: string, nodeId?: string) => setEditing({ collectionId, nodeId, value });
+
+  const commitEditing = async () => {
+    const target = editing;
+    if (!target) return;
+    setEditing(null);
+    const name = target.value.trim();
+    if (!name) return;
+    try {
+      if (target.nodeId) {
+        const node = useCollectionStore.getState().collectionsById[target.collectionId]?.nodesById[target.nodeId];
+        await useCollectionStore.getState().renameNode(target.collectionId, target.nodeId, name);
+        if (node?.type === 'request') renameSavedTab({ collectionId: target.collectionId, nodeId: target.nodeId }, name);
+      } else {
+        await useCollectionStore.getState().renameCollection(target.collectionId, name);
+      }
+    } catch (error) {
+      onToast({ title: 'Could not rename item', detail: String(error), tone: 'error' });
+    }
+  };
+
+  const inlineName = (collectionId: string, value: string, nodeId?: string) => {
+    const active = editing?.collectionId === collectionId && editing.nodeId === nodeId;
+    if (!active) return <span>{value}</span>;
+    return <input className="tree-rename-input" autoFocus value={editing.value} onClick={(event) => event.stopPropagation()} onChange={(event) => setEditing({ ...editing, value: event.target.value })} onFocus={(event) => event.currentTarget.select()} onBlur={() => void commitEditing()} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setEditing(null); }} />;
+  };
+
   const contextAction = async (action: string) => {
     if (!context) return;
-    await useCollectionStore.getState().loadCollection(context.collectionId);
+    const target = context;
+    setContext(null);
+    await useCollectionStore.getState().loadCollection(target.collectionId);
     const store = useCollectionStore.getState();
-    const collection = store.collectionsById[context.collectionId];
-    const node = context.nodeId ? collection?.nodesById[context.nodeId] : null;
+    const collection = store.collectionsById[target.collectionId];
+    const node = target.nodeId ? collection?.nodesById[target.nodeId] : null;
     if (action === 'new-folder') {
       const name = window.prompt('Folder name');
-      if (name?.trim()) await store.createFolder(context.collectionId, node?.type === 'folder' ? node.id : null, name);
+      if (name?.trim()) await store.createFolder(target.collectionId, node?.type === 'folder' ? node.id : null, name);
     } else if (action === 'new-request') {
-      openUnsaved(newRequest());
+      const parentId = node?.type === 'folder' ? node.id : node?.parentId ?? null;
+      const request = { ...newRequest(), name: 'New request' };
+      const nodeId = await store.saveRequest(target.collectionId, parentId, request.name, request);
+      collectionState.setExpanded(target.collectionId, true);
+      if (parentId) collectionState.setExpanded(parentId, true);
+      openRequest(request, { collectionId: target.collectionId, nodeId });
+      startEditing(target.collectionId, request.name, nodeId);
     } else if (action === 'rename') {
-      const name = window.prompt('New name', node?.name ?? collection?.name ?? store.summaries.find((item) => item.id === context.collectionId)?.name);
-      if (!name?.trim()) return;
-      if (node) await store.renameNode(context.collectionId, node.id, name);
-      else await store.renameCollection(context.collectionId, name);
+      startEditing(target.collectionId, node?.name ?? collection?.name ?? store.summaries.find((item) => item.id === target.collectionId)?.name ?? '', node?.id);
     } else if (action === 'duplicate' && node) {
-      await store.duplicateNode(context.collectionId, node.id);
+      const nodeId = await store.duplicateNode(target.collectionId, node.id);
+      const duplicate = useCollectionStore.getState().collectionsById[target.collectionId]?.nodesById[nodeId];
+      if (duplicate?.type === 'request') {
+        openRequest(duplicate.request, { collectionId: target.collectionId, nodeId });
+        startEditing(target.collectionId, duplicate.name, nodeId);
+      }
     } else if (action === 'delete') {
-      if (!window.confirm(`Delete ${node?.name ?? 'this collection'}?`)) return;
-      if (node) await store.deleteNode(context.collectionId, node.id);
-      else await store.deleteCollection(context.collectionId);
+      setDeleteTarget({ collectionId: target.collectionId, nodeId: node?.id, name: node?.name ?? collection?.name ?? 'this collection', type: node?.type ?? 'collection' });
     } else if (action === 'move' && node) {
       await store.loadAll();
-      setMove({ sourceCollectionId: context.collectionId, nodeId: node.id, location: `${context.collectionId}|` });
+      setMove({ sourceCollectionId: target.collectionId, nodeId: node.id, location: `${target.collectionId}|` });
     }
-    setContext(null);
   };
 
   const runContextAction = (action: string) => {
     void contextAction(action).catch((error) => onToast({ title: 'Collection action failed', detail: String(error), tone: 'error' }));
+  };
+
+  const confirmDelete = async () => {
+    const target = deleteTarget;
+    if (!target) return;
+    setDeleting(true);
+    try {
+      const store = useCollectionStore.getState();
+      if (target.nodeId) {
+        const removedIds = await store.deleteNode(target.collectionId, target.nodeId);
+        closeSavedTabs(target.collectionId, removedIds);
+      } else {
+        await store.deleteCollection(target.collectionId);
+        closeSavedTabs(target.collectionId);
+      }
+      setDeleteTarget(null);
+      onToast({ title: `${target.type[0].toUpperCase()}${target.type.slice(1)} deleted` });
+    } catch (error) {
+      onToast({ title: `Could not delete ${target.type}`, detail: String(error), tone: 'error' });
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const confirmMove = async () => {
@@ -295,10 +368,12 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
               const top = (start + offset) * ROW_HEIGHT;
               if (row.type === 'collection') {
                 const expanded = !!collectionState.expandedIds[row.collection.id];
-                return <div className={`virtual-tree-row collection-tree-row${drop?.key === row.key ? ` drop-${drop?.mode}` : ''}`} key={row.key} style={{ top }} onDragOver={(event) => dragOver(event, row)} onDragLeave={() => setDrop(null)} onDrop={() => void dropOn(row)} onContextMenu={(event) => { event.preventDefault(); setContext({ x: event.clientX, y: event.clientY, collectionId: row.collection.id, type: 'collection' }); }}><button onClick={() => void toggleCollection(row.collection)}>{expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<Folder size={13} /><span>{row.collection.name}</span><small>{row.collection.requestCount}</small></button><MoreHorizontal size={13} /></div>;
+                return <div className={`virtual-tree-row collection-tree-row${drop?.key === row.key ? ` drop-${drop?.mode}` : ''}`} key={row.key} style={{ top }} onDragOver={(event) => dragOver(event, row)} onDragLeave={() => setDrop(null)} onDrop={() => void dropOn(row)} onContextMenu={(event) => { event.preventDefault(); setContext({ x: event.clientX, y: event.clientY, collectionId: row.collection.id, type: 'collection' }); }}><div className="collection-row-main" role="button" tabIndex={0} onClick={() => void toggleCollection(row.collection)} onKeyDown={(event) => { if (event.key === 'Enter') void toggleCollection(row.collection); }}>{expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}<Folder size={13} />{inlineName(row.collection.id, row.collection.name)}<small>{row.collection.requestCount}</small></div></div>;
               }
               const expanded = row.type === 'folder' && !!collectionState.expandedIds[row.node.id];
-              return <button className={`virtual-tree-row node-tree-row${row.type === 'request' ? ' request' : ''}${drop?.key === row.key ? ` drop-${drop?.mode}` : ''}`} key={row.key} style={{ top, paddingLeft: 8 + row.depth * 16 }} draggable onDragStart={(event) => { setDragging({ collectionId: row.collectionId, nodeId: row.node.id }); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => { setDragging(null); setDrop(null); }} onDragOver={(event) => dragOver(event, row)} onDragLeave={() => setDrop(null)} onDrop={(event) => { event.stopPropagation(); void dropOn(row); }} onContextMenu={(event) => { event.preventDefault(); setContext({ x: event.clientX, y: event.clientY, collectionId: row.collectionId, nodeId: row.node.id, type: row.type }); }} onClick={() => openNode(row.collectionId, row.node)}>{row.type === 'folder' ? (expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />) : <span className="tree-method" style={{ color: methodColor(row.node.type === 'request' ? row.node.request.method : 'GET') }}>{row.node.type === 'request' ? row.node.request.method : ''}</span>}{row.type === 'folder' && <Folder size={13} />}<span>{row.node.name}</span></button>;
+              const selected = row.type === 'request' && activeOrigin?.collectionId === row.collectionId && activeOrigin.nodeId === row.node.id;
+              const isEditing = editing?.collectionId === row.collectionId && editing.nodeId === row.node.id;
+              return <div className={`virtual-tree-row node-tree-row${row.type === 'request' ? ' request' : ''}${selected ? ' selected' : ''}${drop?.key === row.key ? ` drop-${drop?.mode}` : ''}`} key={row.key} role="button" tabIndex={0} style={{ top, paddingLeft: 8 + row.depth * 16 }} draggable={!isEditing} onDragStart={(event) => { setDragging({ collectionId: row.collectionId, nodeId: row.node.id }); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => { setDragging(null); setDrop(null); }} onDragOver={(event) => dragOver(event, row)} onDragLeave={() => setDrop(null)} onDrop={(event) => { event.stopPropagation(); void dropOn(row); }} onContextMenu={(event) => { event.preventDefault(); setContext({ x: event.clientX, y: event.clientY, collectionId: row.collectionId, nodeId: row.node.id, type: row.type }); }} onClick={() => openNode(row.collectionId, row.node)} onKeyDown={(event) => { if (event.key === 'Enter' && !isEditing) openNode(row.collectionId, row.node); }}>{row.type === 'folder' ? (expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />) : <span className="tree-method" style={{ color: methodColor(row.node.type === 'request' ? row.node.request.method : 'GET') }}>{row.node.type === 'request' ? row.node.request.method : ''}</span>}{row.type === 'folder' && <Folder size={13} />}{inlineName(row.collectionId, row.node.name, row.node.id)}</div>;
             })}
           </div>
         </div>
@@ -308,7 +383,9 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
 
       {view === 'environments' && <div className="tree environment-editor"><div className="environment-toolbar"><select value={environmentFile.activeEnvironmentId ?? ''} onChange={(event) => void setActiveEnvironment(event.target.value || null)}><option value="">No environment</option>{environmentFile.environments.map((environment) => <option key={environment.id} value={environment.id}>{environment.name}</option>)}</select><button title="New environment" onClick={() => { const name = window.prompt('Environment name'); if (name?.trim()) void createEnvironment(name); }}><Plus size={13} /></button></div>{activeEnvironment ? <div className="environment-rows">{activeEnvironment.variables.map((variable) => <div className={`environment-variable${variable.enabled ? '' : ' disabled'}`} key={variable.id}><input type="checkbox" checked={variable.enabled} onChange={(event) => void setEnvironmentVariables(activeEnvironment.id, activeEnvironment.variables.map((item) => item.id === variable.id ? { ...item, enabled: event.target.checked } : item))} /><input placeholder="Variable" value={variable.key} onChange={(event) => void setEnvironmentVariables(activeEnvironment.id, activeEnvironment.variables.map((item) => item.id === variable.id ? applyRowEdit(item, { key: event.target.value }) : item))} /><input placeholder="Value" value={variable.value} onChange={(event) => void setEnvironmentVariables(activeEnvironment.id, activeEnvironment.variables.map((item) => item.id === variable.id ? applyRowEdit(item, { value: event.target.value }) : item))} /></div>)}</div> : <div className="sidebar-empty"><Layers3 size={24} /><span>No environments yet</span><button onClick={() => { const name = window.prompt('Environment name'); if (name?.trim()) void createEnvironment(name); }}>New environment</button></div>}</div>}
 
-      {context && <div className="context-menu" style={{ left: context.x, top: context.y }} onClick={(event) => event.stopPropagation()}>{context.type !== 'request' && <button onClick={() => runContextAction('new-folder')}><FolderPlus size={13} /> New folder</button>}<button onClick={() => runContextAction('new-request')}><Plus size={13} /> New request</button><button onClick={() => runContextAction('rename')}>Rename</button>{context.type === 'request' && <button onClick={() => runContextAction('duplicate')}><Copy size={13} /> Duplicate</button>}{context.type !== 'collection' && <button onClick={() => runContextAction('move')}>Move to…</button>}<button className="danger" onClick={() => runContextAction('delete')}><Trash2 size={13} /> Delete</button></div>}
+      {context && <div className="context-menu" style={{ left: context.x, top: context.y }} onClick={(event) => event.stopPropagation()}>{context.type !== 'request' && <button onClick={() => runContextAction('new-folder')}>New folder</button>}<button onClick={() => runContextAction('new-request')}>New request</button><button onClick={() => runContextAction('rename')}>Rename</button>{context.type === 'request' && <button onClick={() => runContextAction('duplicate')}>Duplicate</button>}{context.type !== 'collection' && <button onClick={() => runContextAction('move')}>Move to…</button>}<button className="danger" onClick={() => runContextAction('delete')}>Delete</button></div>}
+
+      {deleteTarget && <div className="modal-backdrop"><section className="close-tab-modal delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="delete-item-title"><div className="save-modal-header"><div><h2 id="delete-item-title">Delete {deleteTarget.type}?</h2><p>“{deleteTarget.name}” will be permanently deleted{deleteTarget.type === 'folder' ? ', including everything inside it' : ''}.</p></div></div><div className="save-modal-actions"><button className="modal-cancel" disabled={deleting} onClick={() => setDeleteTarget(null)}>Cancel</button><button className="modal-delete" disabled={deleting} onClick={() => void confirmDelete()}>{deleting ? 'Deleting…' : 'Delete'}</button></div></section></div>}
 
       {move && <div className="modal-backdrop"><section className="save-location-modal move-location-modal" role="dialog" aria-modal="true" aria-labelledby="move-location-title"><div className="save-modal-header"><div><h2 id="move-location-title">Move item</h2><p>Choose a collection or nested folder.</p></div><button className="modal-close" aria-label="Close move dialog" onClick={() => setMove(null)}>×</button></div><label className="save-field"><span><b>Folder / location</b><small>Workspace folders</small></span><div className="save-select"><Folder size={14} /><select value={move.location} onChange={(event) => setMove({ ...move, location: event.target.value })}>{moveLocations.map((location) => <option key={location.value} value={location.value}>{location.label}</option>)}</select></div></label><div className="save-modal-actions"><button className="modal-cancel" onClick={() => setMove(null)}>Cancel</button><button className="modal-save" disabled={!moveLocations.length} onClick={() => void confirmMove()}>Move</button></div></section></div>}
     </aside>

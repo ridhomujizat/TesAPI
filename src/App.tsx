@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { FilePlus2, Plus } from 'lucide-react';
 import { Sidebar } from './components/layout/Sidebar';
 import { RequestBuilder } from './components/request/RequestBuilder';
 import { ResponseViewer } from './components/response/ResponseViewer';
@@ -24,6 +25,22 @@ function validUrl(url: string): boolean {
   }
 }
 
+function EmptyRequestState({ onNewRequest }: { onNewRequest: () => void }) {
+  return (
+    <section className="empty-request-state">
+      <div className="empty-request-content">
+        <span className="empty-request-icon"><FilePlus2 size={24} /></span>
+        <div className="empty-request-copy">
+          <strong>No request selected</strong>
+          <p>Choose a request from Collections or start a new one to begin building.</p>
+        </div>
+        <button className="empty-request-primary" onClick={onNewRequest}><Plus size={14} /> New request</button>
+        <span className="empty-request-shortcut">Shortcut <kbd>⌘ T</kbd></span>
+      </div>
+    </section>
+  );
+}
+
 export default function App() {
   const { request, tabs, activeTabId, loading, setLoading, setResponse, setError, closeTab, createRequest, markSaved, restoreSession } = useRequestStore();
   const [toast, setToast] = useState<ToastMessage | null>(null);
@@ -32,6 +49,7 @@ export default function App() {
   const [closeAfterSave, setCloseAfterSave] = useState<string | null>(null);
   const [storageReady, setStorageReady] = useState(false);
   const inflight = useRef<string | null>(null);
+  const hasActiveTab = tabs.some((tab) => tab.id === activeTabId);
 
   const showToast = useCallback((message: ToastMessage) => setToast(message), []);
 
@@ -158,7 +176,7 @@ export default function App() {
       if (!(event.metaKey || event.ctrlKey)) return;
       if (event.key === 'Enter') {
         event.preventDefault();
-        if (!loading) void onSend();
+        if (hasActiveTab && !loading) void onSend();
       } else if (event.key.toLowerCase() === 's') {
         event.preventDefault();
         onSave();
@@ -167,21 +185,23 @@ export default function App() {
         createRequest();
       } else if (event.key.toLowerCase() === 'w') {
         event.preventDefault();
-        requestClose(activeTabId);
+        if (hasActiveTab) requestClose(activeTabId);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [activeTabId, createRequest, loading, onSave, onSend, requestClose]);
+  }, [activeTabId, createRequest, hasActiveTab, loading, onSave, onSend, requestClose]);
 
   const closingTab = tabs.find((tab) => tab.id === closeTabId);
 
   return (
     <div className="shell">
       <Sidebar onToast={showToast} />
-      <main className="main">
-        <RequestBuilder onSend={onSend} onCancel={onCancel} onToast={showToast} onSave={onSave} onCloseTab={requestClose} />
-        <ResponseViewer onRetry={onSend} />
+      <main className={`main${hasActiveTab ? '' : ' empty-request-main'}`}>
+        {hasActiveTab ? <>
+          <RequestBuilder onSend={onSend} onCancel={onCancel} onToast={showToast} onSave={onSave} onCloseTab={requestClose} />
+          <ResponseViewer onRetry={onSend} />
+        </> : <EmptyRequestState onNewRequest={createRequest} />}
       </main>
       <SaveRequestModal
         open={saveOpen}

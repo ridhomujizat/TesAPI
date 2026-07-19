@@ -47,7 +47,7 @@ src/lib/storage/
 
 - [x] Delete hardcoded `groups` mock in `Sidebar.tsx`; render from `collectionStore`
 - [x] Recursive tree with **virtualization** (only visible nodes render); expand/collapse state persisted in session
-- [ ] Node interactions: click request → open/focus tab; context menu (new request, new folder, rename, duplicate, delete); inline rename
+- [x] Node interactions: click request → open/focus tab; context menu (new request, new folder, rename, duplicate, delete); inline rename
 - [x] "New Collection" button; empty states
 - [x] Search filters tree by request name/url (flat result list is acceptable)
 

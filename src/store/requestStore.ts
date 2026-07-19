@@ -47,11 +47,13 @@ interface State {
   openUnsaved: (request: GetmanRequest) => void;
   focusTab: (id: string) => void;
   closeTab: (id: string) => void;
+  renameSavedTab: (origin: RequestOrigin, name: string) => void;
+  closeSavedTabs: (collectionId: string, nodeIds?: string[]) => void;
   markSaved: (origin: RequestOrigin, name: string) => void;
   restoreSession: (session: SessionState) => void;
 }
 
-const initialTab = newTab();
+const idleRequest = newRequest();
 
 function updateActive(state: State, draft: GetmanRequest): Partial<State> {
   return {
@@ -61,9 +63,9 @@ function updateActive(state: State, draft: GetmanRequest): Partial<State> {
 }
 
 export const useRequestStore = create<State>((set, get) => ({
-  tabs: [initialTab],
-  activeTabId: initialTab.id,
-  request: initialTab.draft,
+  tabs: [],
+  activeTabId: '',
+  request: idleRequest,
   response: null,
   error: null,
   loading: false,
@@ -109,13 +111,28 @@ export const useRequestStore = create<State>((set, get) => ({
     if (index < 0) return state;
     const remaining = state.tabs.filter((tab) => tab.id !== id);
     if (!remaining.length) {
-      const tab = newTab();
-      return { tabs: [tab], activeTabId: tab.id, request: tab.draft, response: null, error: null, loading: false };
+      return { tabs: [], activeTabId: '', request: newRequest(), response: null, error: null, loading: false };
     }
     if (state.activeTabId !== id) return { tabs: remaining };
     const next = remaining[Math.min(index, remaining.length - 1)];
     return { tabs: remaining, activeTabId: next.id, request: next.draft, response: null, error: null, loading: false };
   }),
+  renameSavedTab: (origin, name) => set((state) => {
+    let request = state.request;
+    const tabs = state.tabs.map((tab) => {
+      if (tab.origin?.collectionId !== origin.collectionId || tab.origin.nodeId !== origin.nodeId) return tab;
+      const draft = { ...tab.draft, name };
+      if (tab.id === state.activeTabId) request = draft;
+      return { ...tab, draft, savedSnapshot: normalizeForCompare(draft) };
+    });
+    return { tabs, request };
+  }),
+  closeSavedTabs: (collectionId, nodeIds) => {
+    const ids = nodeIds ? new Set(nodeIds) : null;
+    for (const tab of get().tabs) {
+      if (tab.origin?.collectionId === collectionId && (!ids || ids.has(tab.origin.nodeId))) get().closeTab(tab.id);
+    }
+  },
   markSaved: (origin, name) => set((state) => {
     const draft = { ...state.request, name };
     const snapshot = normalizeForCompare(draft);
@@ -125,8 +142,8 @@ export const useRequestStore = create<State>((set, get) => ({
     };
   }),
   restoreSession: (session) => {
-    const tabs = session.tabs?.length ? session.tabs : [newTab()];
+    const tabs = session.tabs ?? [];
     const active = tabs.find((tab) => tab.id === session.activeTabId) ?? tabs[0];
-    set({ tabs, activeTabId: active.id, request: active.draft, response: null, error: null, loading: false });
+    set({ tabs, activeTabId: active?.id ?? '', request: active?.draft ?? newRequest(), response: null, error: null, loading: false });
   },
 }));
