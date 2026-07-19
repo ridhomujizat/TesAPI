@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Sidebar } from './components/layout/Sidebar';
 import { RequestBuilder } from './components/request/RequestBuilder';
 import { ResponseViewer } from './components/response/ResponseViewer';
+import { CurlImportModal } from './components/CurlImportModal';
+import { Toast, type ToastMessage } from './components/Toast';
 import { useRequestStore } from './store/requestStore';
 import { sendRequest, friendlyError } from './lib/http';
 
@@ -15,7 +17,9 @@ function validUrl(url: string): boolean {
 }
 
 export default function App() {
-  const { request, loading, setLoading, setResponse, setError } = useRequestStore();
+  const { request, loading, setLoading, setResponse, setError, replaceRequest } = useRequestStore();
+  const [importOpen, setImportOpen] = useState(false);
+  const [toast, setToast] = useState<ToastMessage | null>(null);
   // Track the in-flight request id so a stale/cancelled result is ignored.
   const inflight = useRef<string | null>(null);
 
@@ -49,6 +53,8 @@ export default function App() {
     setLoading(false);
   }, [setLoading]);
 
+  const showToast = useCallback((message: ToastMessage) => setToast(message), []);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -64,9 +70,19 @@ export default function App() {
     <div className="shell">
       <Sidebar />
       <main className="main">
-        <RequestBuilder onSend={onSend} onCancel={onCancel} />
+        <RequestBuilder onSend={onSend} onCancel={onCancel} onToast={showToast} onImportCurl={() => setImportOpen(true)} />
         <ResponseViewer onRetry={onSend} />
       </main>
+      <CurlImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={(imported, warnings) => {
+          replaceRequest(imported);
+          setImportOpen(false);
+          showToast({ title: 'Imported from cURL', detail: warnings.length ? warnings.join(' · ') : undefined });
+        }}
+      />
+      <Toast message={toast} onClose={() => setToast(null)} />
     </div>
   );
 }

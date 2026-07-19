@@ -1,13 +1,16 @@
 import { useRequestStore } from '../../store/requestStore';
 import { MethodSelect } from './MethodSelect';
-import { parseCurl } from '../../lib/curl';
+import { Copy, Send as SendIcon } from 'lucide-react';
+import { isCurlCommand, parseCurl, toCurl } from '../../lib/curl';
+import type { ToastMessage } from '../Toast';
 
 interface Props {
   onSend: () => void;
   onCancel: () => void;
+  onToast: (message: ToastMessage) => void;
 }
 
-export function UrlBar({ onSend, onCancel }: Props) {
+export function UrlBar({ onSend, onCancel, onToast }: Props) {
   const { request, loading, setMethod, setUrl, replaceRequest } = useRequestStore();
 
   return (
@@ -20,21 +23,44 @@ export function UrlBar({ onSend, onCancel }: Props) {
         value={request.url}
         onChange={(e) => setUrl(e.target.value)}
         onPaste={(e) => {
-          const imported = parseCurl(e.clipboardData.getData('text'));
-          if (!imported) return;
+          const text = e.clipboardData.getData('text/plain') || e.clipboardData.getData('text');
+          if (!isCurlCommand(text)) return;
           e.preventDefault();
-          replaceRequest(imported);
+          e.stopPropagation();
+          const result = parseCurl(text);
+          if (!result.ok) {
+            onToast({ title: 'Could not import cURL', detail: result.error, tone: 'error' });
+            return;
+          }
+          replaceRequest(result.request);
+          onToast({ title: 'Imported from cURL', detail: result.warnings.length ? result.warnings.join(' · ') : undefined });
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') onSend();
         }}
       />
+      <button
+        className="curl-send-copy"
+        title="Copy as cURL"
+        aria-label="Copy request as cURL"
+        onClick={() => {
+          const copy = navigator.clipboard?.writeText(toCurl(request));
+          if (!copy) {
+            onToast({ title: 'Could not copy cURL', tone: 'error' });
+            return;
+          }
+          copy.then(() => onToast({ title: 'Copied as cURL' })).catch(() => onToast({ title: 'Could not copy cURL', tone: 'error' }));
+        }}
+      >
+        <Copy size={13} /><span>cURL</span>
+      </button>
       {loading ? (
         <button className="send-btn cancel" onClick={onCancel}>
           <span className="spinner" /> Cancel
         </button>
       ) : (
         <button className="send-btn" onClick={onSend} disabled={!request.url.trim()}>
+          <SendIcon size={13} />
           Send
         </button>
       )}

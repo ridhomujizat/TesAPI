@@ -24,7 +24,7 @@ Basic error handling (timeouts, DNS failures, invalid URLs)
 Phase 2 — cURL Import/Export (Week 2)
 Goal: Paste a cURL command → it fills the request form; and export any request as cURL.
 
-Import: parse curl strings (handle -X, -H, -d/--data, --data-raw, -u, -F, quotes and line continuations \). Use an existing parser lib like curl-to-json (npm) rather than writing your own regex.
+Import: parse curl strings (handle Bash, Windows cmd.exe, PowerShell, -X, -H, -d/--data, --data-raw, -u, -F, quotes and line continuations). GetMan uses the pure TypeScript handler in `src/lib/curl/`; do not add an external cURL parser dependency.
 Export: serialize the current Request object back into a copyable cURL command.
 Bonus: detect when the user pastes a cURL string directly into the URL bar and auto-convert it — this is the "paste in input URL" behavior you described.
 

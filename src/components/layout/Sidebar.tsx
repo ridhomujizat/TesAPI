@@ -33,8 +33,9 @@ export function Sidebar() {
   })), [query]);
 
   const load = (curl: string, name: string) => {
-    const next = parseCurl(curl);
-    if (!next) return;
+    const result = parseCurl(curl);
+    if (!result.ok) return;
+    const next = result.request;
     if (name === 'Upload receipt') {
       const rows = next.body.formData ?? [];
       next.body.formData = [

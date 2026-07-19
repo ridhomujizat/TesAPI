@@ -1,26 +1,27 @@
 import { useState } from 'react';
-import { Check, ChevronRight, Copy, Plus, X } from 'lucide-react';
+import { ChevronRight, FileInput, Plus, X } from 'lucide-react';
 import { useRequestStore } from '../../store/requestStore';
 import { methodColor } from '../../lib/methods';
-import { toCurl } from '../../lib/curl';
 import { UrlBar } from './UrlBar';
 import { KeyValueEditor } from './KeyValueEditor';
 import { BodyEditor } from './BodyEditor';
 import { AuthEditor } from './AuthEditor';
+import type { ToastMessage } from '../Toast';
 
 type Tab = 'params' | 'headers' | 'body' | 'auth';
 
 interface Props {
   onSend: () => void;
   onCancel: () => void;
+  onToast: (message: ToastMessage) => void;
+  onImportCurl: () => void;
 }
 
 const activeCount = (rows: { key: string; enabled: boolean }[]) =>
   rows.filter((r) => r.enabled && r.key !== '').length;
 
-export function RequestBuilder({ onSend, onCancel }: Props) {
+export function RequestBuilder({ onSend, onCancel, onToast, onImportCurl }: Props) {
   const [tab, setTab] = useState<Tab>('params');
-  const [copied, setCopied] = useState(false);
   const { request, setParams, setHeaders, setBody, setAuth, createRequest } = useRequestStore();
 
   const paramN = activeCount(request.params);
@@ -48,21 +49,10 @@ export function RequestBuilder({ onSend, onCancel }: Props) {
 
       <div className="breadcrumb">
         <span>My Workspace</span><ChevronRight size={12} /><strong>{request.name || 'Untitled request'}</strong>
-        <button
-          className="curl-copy"
-          onClick={() => {
-            navigator.clipboard.writeText(toCurl(request)).then(() => {
-              setCopied(true);
-              window.setTimeout(() => setCopied(false), 1400);
-            });
-          }}
-          title="Copy request as cURL"
-        >
-          {copied ? <Check size={12} /> : <Copy size={12} />} {copied ? 'Copied' : 'cURL'}
-        </button>
+        <button className="import-curl-button" title="Import cURL" onClick={onImportCurl}><FileInput size={13} /><span>Import cURL</span></button>
       </div>
 
-      <UrlBar onSend={onSend} onCancel={onCancel} />
+      <UrlBar onSend={onSend} onCancel={onCancel} onToast={onToast} />
 
       <div className="tabs">
         {tabs.map((t) => (
