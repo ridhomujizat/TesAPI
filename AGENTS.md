@@ -17,6 +17,18 @@ for design, crul copy paste( in input url and can covert to that format) crul, h
 - Request text fields that support placeholders use `VariableInput`. Raw request bodies pass variable statuses to `CodeEditor`, which refreshes CodeMirror decorations through a compartment without remounting the editor.
 - Missing variables are fixed through `environmentStore`; quick-add can target an existing environment or create and activate a new one.
 
+## Implementation and refactoring rules
+
+- Preserve existing behavior, imports, exports, backward compatibility, and current naming conventions.
+- Keep each file focused on a single responsibility and prefer composition over large monolithic components.
+- Target 50–200 lines per file. Avoid files exceeding 300 lines unless there is a strong reason to keep them together.
+- Split oversized or mixed-responsibility files into logical, feature-based folders rather than unrelated utility files.
+- Extract reusable logic into hooks, services, utilities, or helpers only when it improves readability or removes duplication.
+- Move shared constants, types, schemas, and configuration into dedicated files when appropriate.
+- Reuse existing modules and remove duplicated logic before adding new code.
+- Refactor the affected area first when necessary, then implement new functionality using the improved structure.
+- Do not split files that are already simple and do not introduce speculative abstractions or over-engineering.
+
 Phase 0 — Foundation & Design (Week 1)
 Goal: Decide the stack and lock the UI layout before writing features.
 
