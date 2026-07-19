@@ -35,7 +35,7 @@ export interface Auth {
   addTo?: 'header' | 'query';
 }
 
-export interface GetmanRequest {
+export interface TesApiRequest {
   id: string;
   name?: string;
   method: Method;
@@ -46,7 +46,98 @@ export interface GetmanRequest {
   auth: Auth;
 }
 
-export interface GetmanResponse {
+export interface WorkspaceStorage {
+  type: 'local' | 'cloud';
+  rootPath?: string;
+  git?: { enabled: boolean };
+}
+
+export interface WorkspaceDescriptor {
+  id: string;
+  name: string;
+  storage: WorkspaceStorage;
+}
+
+export interface WorkspaceMeta {
+  schemaVersion: number;
+  activeWorkspaceId: string;
+  workspaces: WorkspaceDescriptor[];
+}
+
+export interface WorkspaceFile {
+  schemaVersion: number;
+  name: string;
+  storage: WorkspaceStorage;
+}
+
+export interface CollectionSummary {
+  id: string;
+  name: string;
+  requestCount: number;
+  folderCount: number;
+}
+
+export type TreeNode =
+  | { id: string; type: 'folder'; name: string; children: TreeNode[] }
+  | { id: string; type: 'request'; name: string; request: TesApiRequest };
+
+export interface Collection {
+  id: string;
+  name: string;
+  schemaVersion: number;
+  root: TreeNode[];
+}
+
+export interface HistoryEntry {
+  id: string;
+  ts: string;
+  method: Method;
+  url: string;
+  status: number;
+  durationMs: number;
+  sizeBytes: number;
+  request: TesApiRequest;
+}
+
+export interface HistoryQuery {
+  search?: string;
+  method?: Method | 'ALL';
+  statusClass?: 'ALL' | '2xx' | '3xx' | '4xx' | '5xx' | 'error';
+  limit?: number;
+}
+
+export interface RequestOrigin {
+  collectionId: string;
+  nodeId: string;
+}
+
+export interface RequestTab {
+  id: string;
+  draft: TesApiRequest;
+  origin: RequestOrigin | null;
+  savedSnapshot: string | null;
+}
+
+export interface SessionState {
+  schemaVersion: number;
+  activeTabId: string;
+  tabs: RequestTab[];
+  expandedIds: string[];
+}
+
+export interface EnvironmentSet {
+  id: string;
+  name: string;
+  variables: KeyValue[];
+}
+
+export interface EnvironmentsFile {
+  schemaVersion: number;
+  activeEnvironmentId: string | null;
+  environments: EnvironmentSet[];
+}
+
+export interface TesApiResponse {
   status: number;
   statusText: string;
   headers: Record<string, string>;

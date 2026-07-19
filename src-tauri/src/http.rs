@@ -60,7 +60,7 @@ pub struct Auth {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GetmanRequest {
+pub struct TesApiRequest {
     pub method: String,
     pub url: String,
     #[serde(default)]
@@ -73,7 +73,7 @@ pub struct GetmanRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GetmanResponse {
+pub struct TesApiResponse {
     pub status: u16,
     pub status_text: String,
     pub headers: std::collections::HashMap<String, String>,
@@ -113,7 +113,7 @@ fn classify(err: &reqwest::Error) -> HttpError {
 }
 
 #[tauri::command]
-pub async fn send_request(req: GetmanRequest) -> Result<GetmanResponse, HttpError> {
+pub async fn send_request(req: TesApiRequest) -> Result<TesApiResponse, HttpError> {
     let method = reqwest::Method::from_bytes(req.method.as_bytes())
         .map_err(|_| HttpError::InvalidUrl(format!("Bad method: {}", req.method)))?;
 
@@ -140,7 +140,11 @@ pub async fn send_request(req: GetmanRequest) -> Result<GetmanResponse, HttpErro
     url.query_pairs_mut().clear().extend_pairs(&query);
     let mut builder = client.request(method, url);
 
-    for h in req.headers.iter().filter(|h| h.enabled && !h.key.is_empty()) {
+    for h in req
+        .headers
+        .iter()
+        .filter(|h| h.enabled && !h.key.is_empty())
+    {
         builder = builder.header(&h.key, &h.value);
     }
 
@@ -189,9 +193,9 @@ pub async fn send_request(req: GetmanRequest) -> Result<GetmanResponse, HttpErro
                             let mut part = reqwest::multipart::Part::bytes(file.data.clone())
                                 .file_name(file.name.clone());
                             if !file.mime_type.is_empty() {
-                                part = part
-                                    .mime_str(&file.mime_type)
-                                    .map_err(|e| HttpError::Unknown(format!("Invalid file type: {e}")))?;
+                                part = part.mime_str(&file.mime_type).map_err(|e| {
+                                    HttpError::Unknown(format!("Invalid file type: {e}"))
+                                })?;
                             }
                             form = form.part(p.key.clone(), part);
                         }
@@ -218,7 +222,7 @@ pub async fn send_request(req: GetmanRequest) -> Result<GetmanResponse, HttpErro
     let time_ms = start.elapsed().as_millis();
     let size_bytes = body.len();
 
-    Ok(GetmanResponse {
+    Ok(TesApiResponse {
         status: status.as_u16(),
         status_text: status.canonical_reason().unwrap_or("").to_string(),
         headers,
@@ -230,11 +234,11 @@ pub async fn send_request(req: GetmanRequest) -> Result<GetmanResponse, HttpErro
 
 #[cfg(test)]
 mod tests {
-    use super::GetmanRequest;
+    use super::TesApiRequest;
 
     #[test]
     fn deserializes_multipart_file() {
-        let req: GetmanRequest = serde_json::from_value(serde_json::json!({
+        let req: TesApiRequest = serde_json::from_value(serde_json::json!({
             "method": "POST",
             "url": "https://example.com/upload",
             "params": [],
@@ -255,7 +259,8 @@ mod tests {
                 }]
             },
             "auth": { "type": "none" }
-        })).unwrap();
+        }))
+        .unwrap();
 
         let form_data = req.body.form_data.unwrap();
         let file = &form_data[0].files.as_ref().unwrap()[0];
