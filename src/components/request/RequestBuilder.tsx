@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { ChevronRight, FileInput, Plus, X } from 'lucide-react';
+import { ChevronRight, Copy, Plus, X } from 'lucide-react';
 import { useRequestStore } from '../../store/requestStore';
 import { methodColor } from '../../lib/methods';
+import { toCurl } from '../../lib/curl';
 import { UrlBar } from './UrlBar';
 import { KeyValueEditor } from './KeyValueEditor';
 import { BodyEditor } from './BodyEditor';
@@ -14,13 +15,12 @@ interface Props {
   onSend: () => void;
   onCancel: () => void;
   onToast: (message: ToastMessage) => void;
-  onImportCurl: () => void;
 }
 
 const activeCount = (rows: { key: string; enabled: boolean }[]) =>
   rows.filter((r) => r.enabled && r.key !== '').length;
 
-export function RequestBuilder({ onSend, onCancel, onToast, onImportCurl }: Props) {
+export function RequestBuilder({ onSend, onCancel, onToast }: Props) {
   const [tab, setTab] = useState<Tab>('params');
   const { request, setParams, setHeaders, setBody, setAuth, createRequest } = useRequestStore();
 
@@ -49,7 +49,20 @@ export function RequestBuilder({ onSend, onCancel, onToast, onImportCurl }: Prop
 
       <div className="breadcrumb">
         <span>My Workspace</span><ChevronRight size={12} /><strong>{request.name || 'Untitled request'}</strong>
-        <button className="import-curl-button" title="Import cURL" onClick={onImportCurl}><FileInput size={13} /><span>Import cURL</span></button>
+        <button
+          className="curl-copy"
+          title="Copy request as cURL"
+          onClick={() => {
+            const copy = navigator.clipboard?.writeText(toCurl(request));
+            if (!copy) {
+              onToast({ title: 'Could not copy cURL', tone: 'error' });
+              return;
+            }
+            copy.then(() => onToast({ title: 'Copied as cURL' })).catch(() => onToast({ title: 'Could not copy cURL', tone: 'error' }));
+          }}
+        >
+          <Copy size={12} /> cURL
+        </button>
       </div>
 
       <UrlBar onSend={onSend} onCancel={onCancel} onToast={onToast} />

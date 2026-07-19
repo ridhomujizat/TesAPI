@@ -65,7 +65,7 @@ src/lib/curl/
 ## 6. UI Integration
 
 - [x] `UrlBar`: `onPaste` → `isCurlCommand(text)` → parse → on success `preventDefault()`, replace request in `requestStore`, toast "Imported from cURL" + warnings; on failure preserve the existing request and show an error toast
-- [x] "Import cURL" modal: textarea + Import button + inline error/warnings
+- [x] Use URL-bar paste as the import entry point; standalone Import cURL button/modal removed by UI decision
 - [x] "Copy as cURL" button beside Send → `toCurl(activeRequest)` → clipboard + toast
 - [x] Toast component if not present yet (simple, reusable — history/mock phases will want it)
 

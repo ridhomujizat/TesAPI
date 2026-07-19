@@ -1,7 +1,7 @@
 import { useRequestStore } from '../../store/requestStore';
 import { MethodSelect } from './MethodSelect';
-import { Copy, Send as SendIcon } from 'lucide-react';
-import { isCurlCommand, parseCurl, toCurl } from '../../lib/curl';
+import { Send as SendIcon } from 'lucide-react';
+import { isCurlCommand, parseCurl } from '../../lib/curl';
 import type { ToastMessage } from '../Toast';
 
 interface Props {
@@ -39,21 +39,6 @@ export function UrlBar({ onSend, onCancel, onToast }: Props) {
           if (e.key === 'Enter') onSend();
         }}
       />
-      <button
-        className="curl-send-copy"
-        title="Copy as cURL"
-        aria-label="Copy request as cURL"
-        onClick={() => {
-          const copy = navigator.clipboard?.writeText(toCurl(request));
-          if (!copy) {
-            onToast({ title: 'Could not copy cURL', tone: 'error' });
-            return;
-          }
-          copy.then(() => onToast({ title: 'Copied as cURL' })).catch(() => onToast({ title: 'Could not copy cURL', tone: 'error' }));
-        }}
-      >
-        <Copy size={13} /><span>cURL</span>
-      </button>
       {loading ? (
         <button className="send-btn cancel" onClick={onCancel}>
           <span className="spinner" /> Cancel
