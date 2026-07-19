@@ -40,7 +40,7 @@ export function Sidebar() {
       next.body.formData = [
         ...rows.filter((row) => row.key).map((row) => row.key === 'description' ? { ...row, description: 'Multipart text field' } : row),
         { id: uid(), key: 'supporting_file', value: '', enabled: true, valueType: 'file', files: [], description: 'Select one file' },
-        rows.find((row) => !row.key) ?? { id: uid(), key: '', value: '', enabled: true },
+        rows.find((row) => !row.key) ?? { id: uid(), key: '', value: '', enabled: false },
       ];
     }
     replaceRequest({ ...next, name });

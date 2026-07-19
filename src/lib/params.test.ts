@@ -1,6 +1,6 @@
 // Run: node src/lib/params.test.ts  (Node >=22 strips TS types natively)
 import assert from 'node:assert';
-import { buildUrl, parseParams, withTrailingBlank } from './params.ts';
+import { applyRowEdit, buildUrl, emptyRow, parseParams, withTrailingBlank } from './params.ts';
 
 // buildUrl: only enabled, non-empty keys; encodes; replaces existing query.
 assert.equal(
@@ -24,6 +24,7 @@ assert.deepEqual(
   [['a', '1'], ['b', 'x y']],
 );
 assert.equal(rows[2].key, '');
+assert.equal(rows[2].enabled, false);
 
 // withTrailingBlank: no double-append when last row already blank.
 const blanked = withTrailingBlank([{ id: '1', key: 'a', value: '1', enabled: true }, emptyRow()]);
@@ -36,8 +37,14 @@ const withFile = withTrailingBlank([{
 }]);
 assert.equal(withFile.length, 2);
 
-function emptyRow() {
-  return { id: 'x', key: '', value: '', enabled: true };
-}
+assert.equal(emptyRow().enabled, false);
+assert.equal(applyRowEdit(emptyRow(), { key: 'token' }).enabled, true);
+assert.equal(
+  applyRowEdit({ id: 'off', key: 'token', value: 'x', enabled: false }, { value: 'y' }).enabled,
+  false,
+);
+assert.equal(withTrailingBlank([{
+  id: 'description', key: '', value: '', description: 'note', enabled: true,
+}]).length, 2);
 
 console.log('params.test.ts: all assertions passed');

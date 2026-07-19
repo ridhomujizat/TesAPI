@@ -173,7 +173,7 @@ pub async fn send_request(req: GetmanRequest) -> Result<GetmanResponse, HttpErro
                 .as_ref()
                 .map(|d| {
                     d.iter()
-                        .filter(|p| p.enabled)
+                        .filter(|p| p.enabled && !p.key.is_empty())
                         .map(|p| (p.key.clone(), p.value.clone()))
                         .collect()
                 })
@@ -183,7 +183,7 @@ pub async fn send_request(req: GetmanRequest) -> Result<GetmanResponse, HttpErro
         "form-data" => {
             let mut form = reqwest::multipart::Form::new();
             if let Some(d) = &req.body.form_data {
-                for p in d.iter().filter(|p| p.enabled) {
+                for p in d.iter().filter(|p| p.enabled && !p.key.is_empty()) {
                     if p.value_type.as_deref() == Some("file") {
                         for file in p.files.as_ref().into_iter().flatten() {
                             let mut part = reqwest::multipart::Part::bytes(file.data.clone())

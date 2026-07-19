@@ -1,6 +1,7 @@
 import { Trash2 } from 'lucide-react';
 import type { KeyValue } from '../../types';
 import { uid } from '../../lib/id';
+import { applyRowEdit } from '../../lib/params';
 
 interface Props {
   rows: KeyValue[];
@@ -12,9 +13,12 @@ export function KeyValueEditor({ rows, onChange, showDescription = true }: Props
   const update = (id: string, patch: Partial<KeyValue>) =>
     onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
 
+  const edit = (row: KeyValue, patch: Partial<KeyValue>) =>
+    onChange(rows.map((item) => (item.id === row.id ? applyRowEdit(item, patch) : item)));
+
   const remove = (id: string) => {
     const next = rows.filter((r) => r.id !== id);
-    onChange(next.length ? next : [{ id: uid(), key: '', value: '', enabled: true }]);
+    onChange(next.length ? next : [{ id: uid(), key: '', value: '', enabled: false }]);
   };
 
   return (
@@ -37,20 +41,20 @@ export function KeyValueEditor({ rows, onChange, showDescription = true }: Props
             className="cell"
             placeholder="Key"
             value={row.key}
-            onChange={(e) => update(row.id, { key: e.target.value })}
+            onChange={(e) => edit(row, { key: e.target.value })}
           />
           <input
             className="cell"
             placeholder="Value"
             value={row.value}
-            onChange={(e) => update(row.id, { value: e.target.value })}
+            onChange={(e) => edit(row, { value: e.target.value })}
           />
           {showDescription && (
             <input
               className="cell desc"
               placeholder="Description"
               value={row.description ?? ''}
-              onChange={(e) => update(row.id, { description: e.target.value })}
+              onChange={(e) => edit(row, { description: e.target.value })}
             />
           )}
           <button className="kv-delete" title="Remove" onClick={() => remove(row.id)}>

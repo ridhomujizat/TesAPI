@@ -2,12 +2,25 @@ import type { KeyValue } from '../types';
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
-export const emptyRow = (): KeyValue => ({ id: uid(), key: '', value: '', enabled: true });
+export const emptyRow = (): KeyValue => ({ id: uid(), key: '', value: '', enabled: false });
+
+export const isBlankRow = (row: KeyValue): boolean =>
+  row.key === '' &&
+  row.value === '' &&
+  !row.description &&
+  row.valueType !== 'file' &&
+  (row.files?.length ?? 0) === 0;
+
+export const applyRowEdit = (row: KeyValue, patch: Partial<KeyValue>): KeyValue => ({
+  ...row,
+  ...patch,
+  ...(isBlankRow(row) ? { enabled: true } : {}),
+});
 
 // Ensure the last row is always blank so the editor auto-appends.
 export function withTrailingBlank(rows: KeyValue[]): KeyValue[] {
   const last = rows[rows.length - 1];
-  if (!last || last.key !== '' || last.value !== '' || (last.files?.length ?? 0) > 0) return [...rows, emptyRow()];
+  if (!last || !isBlankRow(last)) return [...rows, emptyRow()];
   return rows;
 }
 
