@@ -1,5 +1,24 @@
-import type { TesApiRequest, KeyValue } from '../types';
+import type { EnvironmentsFile, EnvironmentSet, TesApiRequest, KeyValue } from '../types';
+import { uid } from './id.ts';
 import { VAR_TOKEN_RE } from './variables.ts';
+
+export function copyEnvironment(source: EnvironmentSet): EnvironmentSet {
+  return {
+    ...source,
+    id: uid(),
+    name: `${source.name} copy`,
+    variables: source.variables.map((variable) => ({ ...variable, id: uid() })),
+  };
+}
+
+export function removeEnvironment(file: EnvironmentsFile, id: string): EnvironmentsFile {
+  const environments = file.environments.filter((environment) => environment.id !== id);
+  return {
+    ...file,
+    activeEnvironmentId: file.activeEnvironmentId === id ? environments[0]?.id ?? null : file.activeEnvironmentId,
+    environments,
+  };
+}
 
 export function substitute(value: string, variables: Record<string, string>, unresolved: Set<string>): string {
   return value.replace(new RegExp(VAR_TOKEN_RE.source, VAR_TOKEN_RE.flags), (match, key: string) => {

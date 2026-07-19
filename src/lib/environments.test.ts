@@ -1,7 +1,7 @@
 // Run: node src/lib/environments.test.ts (Node >=22)
 import assert from 'node:assert';
-import { resolveRequest } from './environments.ts';
-import type { TesApiRequest } from '../types/index.ts';
+import { copyEnvironment, removeEnvironment, resolveRequest } from './environments.ts';
+import type { EnvironmentsFile, TesApiRequest } from '../types/index.ts';
 
 const request: TesApiRequest = {
   id: 'r', method: 'POST', url: '{{base_url}}/items',
@@ -20,5 +20,15 @@ assert.equal(result.request.headers[0].value, 'Bearer secret');
 assert.equal(result.request.auth.token, 'secret');
 assert.deepEqual(result.unresolved, ['missing']);
 assert.equal(request.url, '{{base_url}}/items');
+
+const environment = { id: 'env-a', name: 'Local', variables: [{ id: 'var-a', key: 'token', value: 'one', enabled: true }] };
+const duplicate = copyEnvironment(environment);
+assert.equal(duplicate.name, 'Local copy');
+assert.notEqual(duplicate.id, environment.id);
+assert.notEqual(duplicate.variables[0].id, environment.variables[0].id);
+const file: EnvironmentsFile = { schemaVersion: 1, activeEnvironmentId: duplicate.id, environments: [environment, duplicate] };
+const remaining = removeEnvironment(file, duplicate.id);
+assert.equal(remaining.activeEnvironmentId, environment.id);
+assert.deepEqual(remaining.environments, [environment]);
 
 console.log('environments.test.ts: all assertions passed');

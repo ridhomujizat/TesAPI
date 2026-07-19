@@ -2,12 +2,16 @@ import { create } from 'zustand';
 import type { EnvironmentsFile, KeyValue } from '../types';
 import { emptyRow, withTrailingBlank } from '../lib/params';
 import { uid } from '../lib/id';
+import { copyEnvironment, removeEnvironment } from '../lib/environments';
 import { storageProvider } from '../lib/storage/localJson';
 
 interface State {
   file: EnvironmentsFile;
   initialize: () => Promise<void>;
   createEnvironment: (name: string, initial?: { key: string; value: string }) => Promise<string>;
+  duplicateEnvironment: (id: string) => Promise<string>;
+  renameEnvironment: (id: string, name: string) => Promise<void>;
+  deleteEnvironment: (id: string) => Promise<void>;
   setActive: (id: string | null) => Promise<void>;
   setVariables: (id: string, variables: KeyValue[]) => Promise<void>;
   setVariable: (id: string, key: string, value: string) => Promise<void>;
@@ -38,7 +42,33 @@ export const useEnvironmentStore = create<State>((set, get) => ({
     set({ file });
     return environment.id;
   },
+  duplicateEnvironment: async (id) => {
+    const source = get().file.environments.find((environment) => environment.id === id);
+    if (!source) throw new Error('Environment not found');
+    const duplicate = copyEnvironment(source);
+    const index = get().file.environments.findIndex((environment) => environment.id === id);
+    const environments = [...get().file.environments];
+    environments.splice(index + 1, 0, duplicate);
+    const file = { ...get().file, activeEnvironmentId: duplicate.id, environments };
+    await storageProvider.saveEnvironments(file);
+    window.clearTimeout(saveTimer);
+    set({ file });
+    return duplicate.id;
+  },
+  renameEnvironment: async (id, name) => {
+    const file = { ...get().file, environments: get().file.environments.map((environment) => environment.id === id ? { ...environment, name: name.trim() || 'Environment' } : environment) };
+    await storageProvider.saveEnvironments(file);
+    window.clearTimeout(saveTimer);
+    set({ file });
+  },
+  deleteEnvironment: async (id) => {
+    const file = removeEnvironment(get().file, id);
+    await storageProvider.saveEnvironments(file);
+    window.clearTimeout(saveTimer);
+    set({ file });
+  },
   setActive: async (activeEnvironmentId) => {
+    if (get().file.activeEnvironmentId === activeEnvironmentId) return;
     const file = { ...get().file, activeEnvironmentId };
     await storageProvider.saveEnvironments(file);
     window.clearTimeout(saveTimer);

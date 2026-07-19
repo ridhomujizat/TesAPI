@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { Sidebar } from './components/layout/Sidebar';
+import { EnvironmentEditor } from './components/environment/EnvironmentEditor';
 import { RequestBuilder } from './components/request/RequestBuilder';
 import { ResponseViewer } from './components/response/ResponseViewer';
 import { SaveRequestModal } from './components/SaveRequestModal';
@@ -44,6 +45,7 @@ export default function App() {
   const [closeTabId, setCloseTabId] = useState<string | null>(null);
   const [closeAfterSave, setCloseAfterSave] = useState<string | null>(null);
   const [storageReady, setStorageReady] = useState(false);
+  const [workspaceView, setWorkspaceView] = useState<'api' | 'environment'>('api');
   const inflight = useRef<string | null>(null);
   const hasActiveTab = tabs.some((tab) => tab.id === activeTabId);
 
@@ -140,6 +142,11 @@ export default function App() {
     setLoading(false);
   }, [setLoading]);
 
+  const openNewRequest = useCallback(() => {
+    createRequest();
+    setWorkspaceView('api');
+  }, [createRequest]);
+
   const saveExisting = useCallback(async (tabId = activeTabId) => {
     const state = useRequestStore.getState();
     const tab = state.tabs.find((item) => item.id === tabId);
@@ -178,32 +185,32 @@ export default function App() {
       if (!(event.metaKey || event.ctrlKey)) return;
       if (event.key === 'Enter') {
         event.preventDefault();
-        if (hasActiveTab && !loading) void onSend();
+        if (workspaceView === 'api' && hasActiveTab && !loading) void onSend();
       } else if (event.key.toLowerCase() === 's') {
         event.preventDefault();
-        onSave();
+        if (workspaceView === 'api') onSave();
       } else if (event.key.toLowerCase() === 't') {
         event.preventDefault();
-        createRequest();
+        openNewRequest();
       } else if (event.key.toLowerCase() === 'w') {
         event.preventDefault();
-        if (hasActiveTab) requestClose(activeTabId);
+        if (workspaceView === 'api' && hasActiveTab) requestClose(activeTabId);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [activeTabId, createRequest, hasActiveTab, loading, onSave, onSend, requestClose]);
+  }, [activeTabId, hasActiveTab, loading, onSave, onSend, openNewRequest, requestClose, workspaceView]);
 
   const closingTab = tabs.find((tab) => tab.id === closeTabId);
 
   return (
     <div className="shell">
-      <Sidebar onToast={showToast} />
-      <main className={`main${hasActiveTab ? '' : ' empty-request-main'}`}>
-        {hasActiveTab ? <>
+      <Sidebar onToast={showToast} onWorkspaceChange={setWorkspaceView} />
+      <main className={workspaceView === 'environment' ? 'main environment-main' : `main${hasActiveTab ? '' : ' empty-request-main'}`}>
+        {workspaceView === 'environment' ? <EnvironmentEditor /> : hasActiveTab ? <>
           <RequestBuilder onSend={onSend} onCancel={onCancel} onToast={showToast} onSave={onSave} onCloseTab={requestClose} />
           <ResponseViewer onRetry={onSend} />
-        </> : <EmptyRequestState onNewRequest={createRequest} />}
+        </> : <EmptyRequestState onNewRequest={openNewRequest} />}
       </main>
       <SaveRequestModal
         open={saveOpen}

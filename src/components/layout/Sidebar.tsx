@@ -8,9 +8,9 @@ import { storageProvider } from '../../lib/storage/localJson';
 import type { CollectionSummary, HistoryEntry, HistoryQuery } from '../../types';
 import { isDescendant, type FlatNode } from '../../lib/collections';
 import type { ToastMessage } from '../Toast';
-import { applyRowEdit } from '../../lib/params';
 
 type View = 'collections' | 'history' | 'environments';
+export type WorkspaceView = 'api' | 'environment';
 type CollectionRow =
   | { key: string; type: 'collection'; collection: CollectionSummary; depth: number }
   | { key: string; type: 'folder' | 'request'; collectionId: string; node: FlatNode; depth: number };
@@ -43,6 +43,12 @@ interface DeleteState {
   type: 'collection' | 'folder' | 'request';
 }
 
+interface EnvironmentContextState {
+  x: number;
+  y: number;
+  environmentId?: string;
+}
+
 const ROW_HEIGHT = 32;
 
 function dayLabel(timestamp: string): string {
@@ -55,12 +61,14 @@ function dayLabel(timestamp: string): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: date.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
 }
 
-export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void }) {
+export function Sidebar({ onToast, onWorkspaceChange }: { onToast: (message: ToastMessage) => void; onWorkspaceChange: (view: WorkspaceView) => void }) {
   const collectionState = useCollectionStore();
   const environmentFile = useEnvironmentStore((state) => state.file);
   const createEnvironment = useEnvironmentStore((state) => state.createEnvironment);
+  const duplicateEnvironment = useEnvironmentStore((state) => state.duplicateEnvironment);
+  const renameEnvironment = useEnvironmentStore((state) => state.renameEnvironment);
+  const deleteEnvironment = useEnvironmentStore((state) => state.deleteEnvironment);
   const setActiveEnvironment = useEnvironmentStore((state) => state.setActive);
-  const setEnvironmentVariables = useEnvironmentStore((state) => state.setVariables);
   const { tabs, activeTabId, openRequest, openUnsaved, renameSavedTab, closeSavedTabs } = useRequestStore();
   const [view, setView] = useState<View>('collections');
   const [query, setQuery] = useState('');
@@ -74,6 +82,10 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
   const [deleting, setDeleting] = useState(false);
   const [clearHistoryOpen, setClearHistoryOpen] = useState(false);
   const [clearingHistory, setClearingHistory] = useState(false);
+  const [environmentContext, setEnvironmentContext] = useState<EnvironmentContextState | null>(null);
+  const [editingEnvironment, setEditingEnvironment] = useState<{ id: string; value: string } | null>(null);
+  const [environmentDeleteTarget, setEnvironmentDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deletingEnvironment, setDeletingEnvironment] = useState(false);
   const [dragging, setDragging] = useState<{ collectionId: string; nodeId: string } | null>(null);
   const [drop, setDrop] = useState<{ key: string; mode: DropMode } | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -114,7 +126,7 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
   }, [refreshHistory, view]);
 
   useEffect(() => {
-    const close = () => setContext(null);
+    const close = () => { setContext(null); setEnvironmentContext(null); };
     const cancelDrag = (event: KeyboardEvent) => { if (event.key === 'Escape') { setDragging(null); setDrop(null); } };
     window.addEventListener('click', close);
     window.addEventListener('keydown', cancelDrag);
@@ -152,7 +164,6 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
     }
     return result;
   }, [collectionState.collectionsById, collectionState.expandedIds, collectionState.summaries, query]);
-  const activeEnvironment = environmentFile.environments.find((environment) => environment.id === environmentFile.activeEnvironmentId);
   const activeOrigin = tabs.find((tab) => tab.id === activeTabId)?.origin;
   const moveLocations = useMemo(() => {
     if (!move) return [];
@@ -177,6 +188,13 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
 
   const start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 5);
   const end = Math.min(rows.length, start + Math.ceil(viewportHeight / ROW_HEIGHT) + 10);
+  const filteredEnvironments = environmentFile.environments.filter((environment) => environment.name.toLowerCase().includes(query.trim().toLowerCase()));
+
+  const selectView = (next: View) => {
+    setView(next);
+    setQuery('');
+    onWorkspaceChange(next === 'environments' ? 'environment' : 'api');
+  };
 
   const toggleCollection = async (summary: CollectionSummary) => {
     const expanded = !collectionState.expandedIds[summary.id];
@@ -189,6 +207,65 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
       collectionState.setExpanded(node.id, !collectionState.expandedIds[node.id]);
     } else {
       openRequest(node.request, { collectionId, nodeId: node.id });
+      onWorkspaceChange('api');
+    }
+  };
+
+  const createSidebarEnvironment = async () => {
+    try {
+      const id = await createEnvironment('New environment');
+      setEditingEnvironment({ id, value: 'New environment' });
+      onWorkspaceChange('environment');
+    } catch (error) {
+      onToast({ title: 'Could not create environment', detail: String(error), tone: 'error' });
+    }
+  };
+
+  const commitEnvironmentName = async () => {
+    const target = editingEnvironment;
+    if (!target) return;
+    setEditingEnvironment(null);
+    try {
+      await renameEnvironment(target.id, target.value);
+    } catch (error) {
+      onToast({ title: 'Could not rename environment', detail: String(error), tone: 'error' });
+    }
+  };
+
+  const runEnvironmentAction = async (action: 'new' | 'use' | 'rename' | 'duplicate' | 'delete') => {
+    const environmentId = environmentContext?.environmentId;
+    setEnvironmentContext(null);
+    if (action === 'new') {
+      await createSidebarEnvironment();
+      return;
+    }
+    const environment = environmentFile.environments.find((item) => item.id === environmentId);
+    if (!environment) return;
+    if (action === 'use') {
+      await setActiveEnvironment(environment.id);
+    } else if (action === 'rename') {
+      setEditingEnvironment({ id: environment.id, value: environment.name });
+    } else if (action === 'duplicate') {
+      const id = await duplicateEnvironment(environment.id);
+      const duplicate = useEnvironmentStore.getState().file.environments.find((item) => item.id === id);
+      if (duplicate) setEditingEnvironment({ id, value: duplicate.name });
+    } else {
+      setEnvironmentDeleteTarget({ id: environment.id, name: environment.name });
+    }
+  };
+
+  const confirmEnvironmentDelete = async () => {
+    const target = environmentDeleteTarget;
+    if (!target) return;
+    setDeletingEnvironment(true);
+    try {
+      await deleteEnvironment(target.id);
+      setEnvironmentDeleteTarget(null);
+      onToast({ title: 'Environment deleted' });
+    } catch (error) {
+      onToast({ title: 'Could not delete environment', detail: String(error), tone: 'error' });
+    } finally {
+      setDeletingEnvironment(false);
     }
   };
 
@@ -278,6 +355,10 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
 
   const runContextAction = (action: string) => {
     void contextAction(action).catch((error) => onToast({ title: 'Collection action failed', detail: String(error), tone: 'error' }));
+  };
+
+  const requestEnvironmentAction = (action: 'new' | 'use' | 'rename' | 'duplicate' | 'delete') => {
+    void runEnvironmentAction(action).catch((error) => onToast({ title: 'Environment action failed', detail: String(error), tone: 'error' }));
   };
 
   const confirmDelete = async () => {
@@ -381,13 +462,14 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
   return (
     <aside className="sidebar" onContextMenu={(event) => event.preventDefault()}>
       <div className="sidebar-header">
-        <button className={`icon-button${view === 'collections' ? ' active' : ''}`} title="Collections" onClick={() => setView('collections')}><Folder size={15} /></button>
-        <button className={`icon-button${view === 'history' ? ' active' : ''}`} title="History" onClick={() => setView('history')}><History size={15} /></button>
-        <button className={`icon-button${view === 'environments' ? ' active' : ''}`} title="Environments" onClick={() => setView('environments')}><Layers3 size={15} /></button>
+        <button className={`icon-button${view === 'collections' ? ' active' : ''}`} title="Collections" onClick={() => selectView('collections')}><Folder size={15} /></button>
+        <button className={`icon-button${view === 'history' ? ' active' : ''}`} title="History" onClick={() => selectView('history')}><History size={15} /></button>
+        <button className={`icon-button${view === 'environments' ? ' active' : ''}`} title="Environments" onClick={() => selectView('environments')}><Layers3 size={15} /></button>
         {view === 'collections' && <button className="icon-button sidebar-add" title="New collection" onClick={() => void createCollection()}><Plus size={15} /></button>}
+        {view === 'environments' && <button className="icon-button sidebar-add" title="New environment" onClick={() => void createSidebarEnvironment()}><Plus size={15} /></button>}
       </div>
       <div className="sidebar-search">
-        <div className="search-box"><Search size={13} color="var(--text-muted)" /><input placeholder={view === 'history' ? 'Search history' : 'Search requests'} spellCheck={false} value={query} onChange={(event) => setQuery(event.target.value)} /><kbd>⌘K</kbd></div>
+        <div className="search-box"><Search size={13} color="var(--text-muted)" /><input placeholder={view === 'history' ? 'Search history' : view === 'environments' ? 'Search environments' : 'Search requests'} spellCheck={false} value={query} onChange={(event) => setQuery(event.target.value)} /><kbd>⌘K</kbd></div>
         {view === 'history' && <div className="history-filters"><select value={method} onChange={(event) => setMethod(event.target.value as HistoryQuery['method'])}><option value="ALL">All methods</option>{['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((value) => <option key={value}>{value}</option>)}</select><select value={statusClass} onChange={(event) => setStatusClass(event.target.value as HistoryQuery['statusClass'])}><option value="ALL">All status</option><option value="2xx">2xx</option><option value="3xx">3xx</option><option value="4xx">4xx</option><option value="5xx">5xx</option><option value="error">Network</option></select></div>}
       </div>
 
@@ -412,13 +494,17 @@ export function Sidebar({ onToast }: { onToast: (message: ToastMessage) => void 
 
       {view === 'history' && <div className="tree history-list"><div className="history-toolbar"><span className="label-caps">History</span><button onClick={() => setClearHistoryOpen(true)}><Trash2 size={12} /> Clear</button></div>{history.map((entry, index) => { const label = dayLabel(entry.ts); const previous = index ? dayLabel(history[index - 1].ts) : ''; return <div key={entry.id}>{label !== previous && <div className="history-day label-caps">{label}</div>}<button className="history-entry" onClick={() => openUnsaved(entry.request)}><span className="tree-method" style={{ color: methodColor(entry.method) }}>{entry.method}</span><span className="history-url">{entry.url}</span><span className={`history-status status-${entry.status ? Math.floor(entry.status / 100) : 0}`}>{entry.status || 'ERR'}</span><time>{entry.durationMs} ms</time></button></div>; })}{!history.length && <div className="sidebar-empty"><History size={24} /><span>No history yet</span></div>}</div>}
 
-      {view === 'environments' && <div className="tree environment-editor"><div className="environment-toolbar"><select value={environmentFile.activeEnvironmentId ?? ''} onChange={(event) => void setActiveEnvironment(event.target.value || null)}><option value="">No environment</option>{environmentFile.environments.map((environment) => <option key={environment.id} value={environment.id}>{environment.name}</option>)}</select><button title="New environment" onClick={() => { const name = window.prompt('Environment name'); if (name?.trim()) void createEnvironment(name); }}><Plus size={13} /></button></div>{activeEnvironment ? <div className="environment-rows">{activeEnvironment.variables.map((variable) => <div className={`environment-variable${variable.enabled ? '' : ' disabled'}`} key={variable.id}><input type="checkbox" checked={variable.enabled} onChange={(event) => void setEnvironmentVariables(activeEnvironment.id, activeEnvironment.variables.map((item) => item.id === variable.id ? { ...item, enabled: event.target.checked } : item))} /><input placeholder="Variable" value={variable.key} onChange={(event) => void setEnvironmentVariables(activeEnvironment.id, activeEnvironment.variables.map((item) => item.id === variable.id ? applyRowEdit(item, { key: event.target.value }) : item))} /><input placeholder="Value" value={variable.value} onChange={(event) => void setEnvironmentVariables(activeEnvironment.id, activeEnvironment.variables.map((item) => item.id === variable.id ? applyRowEdit(item, { value: event.target.value }) : item))} /></div>)}</div> : <div className="sidebar-empty"><Layers3 size={24} /><span>No environments yet</span><button onClick={() => { const name = window.prompt('Environment name'); if (name?.trim()) void createEnvironment(name); }}>New environment</button></div>}</div>}
+      {view === 'environments' && <div className="tree environment-list" onContextMenu={(event) => { event.preventDefault(); setEnvironmentContext({ x: event.clientX, y: event.clientY }); }}>{filteredEnvironments.map((environment) => { const active = environment.id === environmentFile.activeEnvironmentId; const editing = editingEnvironment?.id === environment.id; const variableCount = environment.variables.filter((variable) => variable.key.trim()).length; const activate = () => { if (!editing) void setActiveEnvironment(environment.id).catch((error) => onToast({ title: 'Could not select environment', detail: String(error), tone: 'error' })); }; return <div className={`environment-list-row${active ? ' active' : ''}`} key={environment.id} role="button" tabIndex={0} onClick={activate} onKeyDown={(event) => { if (event.key === 'Enter') activate(); }} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setEnvironmentContext({ x: event.clientX, y: event.clientY, environmentId: environment.id }); }}><i className={active ? 'online' : ''} />{editing ? <input className="tree-rename-input" autoFocus value={editingEnvironment.value} onClick={(event) => event.stopPropagation()} onChange={(event) => setEditingEnvironment({ id: environment.id, value: event.target.value })} onFocus={(event) => event.currentTarget.select()} onBlur={() => void commitEnvironmentName()} onKeyDown={(event) => { event.stopPropagation(); if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setEditingEnvironment(null); }} /> : <span>{environment.name}</span>}<small>{variableCount}</small></div>; })}{!filteredEnvironments.length && <div className="sidebar-empty"><span>{query ? 'No matching environments' : 'No environments yet'}</span>{!query && <button onClick={() => void createSidebarEnvironment()}>New environment</button>}</div>}</div>}
 
       {context && <div className="context-menu" style={{ left: context.x, top: context.y }} onClick={(event) => event.stopPropagation()}>{context.type === 'empty' ? <><button onClick={() => runContextAction('new-collection')}>New collection</button><button disabled={!context.collectionId} onClick={() => runContextAction('new-folder')}>New folder</button><button disabled={!context.collectionId} onClick={() => runContextAction('new-request')}>New request</button></> : <>{context.type !== 'request' && <button onClick={() => runContextAction('new-folder')}>New folder</button>}<button onClick={() => runContextAction('new-request')}>New request</button><button onClick={() => runContextAction('rename')}>Rename</button>{context.type === 'request' && <button onClick={() => runContextAction('duplicate')}>Duplicate</button>}{context.type !== 'collection' && <button onClick={() => runContextAction('move')}>Move to…</button>}<button className="danger" onClick={() => runContextAction('delete')}>Delete</button></>}</div>}
+
+      {environmentContext && <div className="context-menu" style={{ left: environmentContext.x, top: environmentContext.y }} onClick={(event) => event.stopPropagation()}><button onClick={() => requestEnvironmentAction('new')}>New Environment</button>{environmentContext.environmentId && <><button disabled={environmentContext.environmentId === environmentFile.activeEnvironmentId} onClick={() => requestEnvironmentAction('use')}>Use Environment</button><button onClick={() => requestEnvironmentAction('rename')}>Rename Environment</button><button onClick={() => requestEnvironmentAction('duplicate')}>Duplicate Environment</button><button className="danger" onClick={() => requestEnvironmentAction('delete')}>Delete Environment</button></>}</div>}
 
       {deleteTarget && <div className="modal-backdrop"><section className="close-tab-modal delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="delete-item-title"><div className="save-modal-header"><div><h2 id="delete-item-title">Delete {deleteTarget.type}?</h2><p>“{deleteTarget.name}” will be permanently deleted{deleteTarget.type === 'folder' ? ', including everything inside it' : ''}.</p></div></div><div className="save-modal-actions"><button className="modal-cancel" disabled={deleting} onClick={() => setDeleteTarget(null)}>Cancel</button><button className="modal-delete" disabled={deleting} onClick={() => void confirmDelete()}>{deleting ? 'Deleting…' : 'Delete'}</button></div></section></div>}
 
       {clearHistoryOpen && <div className="modal-backdrop"><section className="close-tab-modal delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="clear-history-title"><div className="save-modal-header"><div><h2 id="clear-history-title">Clear history?</h2><p>All request history will be permanently deleted.</p></div></div><div className="save-modal-actions"><button className="modal-cancel" disabled={clearingHistory} onClick={() => setClearHistoryOpen(false)}>Cancel</button><button className="modal-delete" disabled={clearingHistory} onClick={() => void confirmClearHistory()}>{clearingHistory ? 'Clearing…' : 'Clear history'}</button></div></section></div>}
+
+      {environmentDeleteTarget && <div className="modal-backdrop"><section className="close-tab-modal delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="delete-environment-title"><div className="save-modal-header"><div><h2 id="delete-environment-title">Delete environment?</h2><p>“{environmentDeleteTarget.name}” and all of its variables will be permanently deleted.</p></div></div><div className="save-modal-actions"><button className="modal-cancel" disabled={deletingEnvironment} onClick={() => setEnvironmentDeleteTarget(null)}>Cancel</button><button className="modal-delete" disabled={deletingEnvironment} onClick={() => void confirmEnvironmentDelete()}>{deletingEnvironment ? 'Deleting…' : 'Delete'}</button></div></section></div>}
 
       {move && <div className="modal-backdrop"><section className="save-location-modal move-location-modal" role="dialog" aria-modal="true" aria-labelledby="move-location-title"><div className="save-modal-header"><div><h2 id="move-location-title">Move item</h2><p>Choose a collection or nested folder.</p></div><button className="modal-close" aria-label="Close move dialog" onClick={() => setMove(null)}>×</button></div><label className="save-field"><span><b>Folder / location</b><small>Workspace folders</small></span><div className="save-select"><Folder size={14} /><select value={move.location} onChange={(event) => setMove({ ...move, location: event.target.value })}>{moveLocations.map((location) => <option key={location.value} value={location.value}>{location.label}</option>)}</select></div></label><div className="save-modal-actions"><button className="modal-cancel" onClick={() => setMove(null)}>Cancel</button><button className="modal-save" disabled={!moveLocations.length} onClick={() => void confirmMove()}>Move</button></div></section></div>}
     </aside>
