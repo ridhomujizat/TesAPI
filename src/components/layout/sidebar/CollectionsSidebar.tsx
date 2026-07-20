@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, FileOutput, Folder, FolderPlus, Plus } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileOutput, FileUp, Folder, FolderPlus, Plus } from 'lucide-react';
 import { useCollectionStore } from '../../../store/collectionStore';
 import { newRequest, useRequestStore } from '../../../store/requestStore';
 import { isDescendant, type FlatNode } from '../../../lib/collections';
@@ -10,6 +10,7 @@ import { SidebarNav } from './SidebarNav';
 import { SidebarSearch } from './SidebarSearch';
 import type { SidebarView, WorkspaceView } from './types';
 import { buildMoveLocations, buildRows, type CollectionRow, type ContextState, type DeleteState, type DropMode, type DropState, type EditingState, type MoveState } from './collectionSidebarModel';
+import { parsePostmanCollection } from '../../../lib/import/postman';
 
 const ROW_HEIGHT = 32;
 
@@ -19,6 +20,8 @@ export function CollectionsSidebar({ onToast, onViewChange, onWorkspaceChange }:
   const collectionState = useCollectionStore();
   const { tabs, activeTabId, response: currentResponse, openRequest, renameSavedTab, closeSavedTabs } = useRequestStore();
   const [query, setQuery] = useState('');
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [context, setContext] = useState<ContextState | null>(null);
   const [move, setMove] = useState<MoveState | null>(null);
   const [editing, setEditing] = useState<EditingState | null>(null);
@@ -29,6 +32,7 @@ export function CollectionsSidebar({ onToast, onViewChange, onWorkspaceChange }:
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(500);
   const treeRef = useRef<HTMLDivElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const hoverTimer = useRef(0);
   const rows = useMemo(() => buildRows(collectionState, query), [collectionState.collectionsById, collectionState.expandedIds, collectionState.summaries, query]);
   const moveLocations = useMemo(() => move ? buildMoveLocations(collectionState, move, isDescendant) : [], [collectionState.collectionsById, collectionState.summaries, move]);
@@ -46,8 +50,8 @@ export function CollectionsSidebar({ onToast, onViewChange, onWorkspaceChange }:
   }, []);
   useEffect(() => { if (query.trim()) void collectionState.loadAll(); }, [collectionState.loadAll, query]);
   useEffect(() => {
-    const close = () => setContext(null);
-    const cancelDrag = (event: KeyboardEvent) => { if (event.key === 'Escape') { setDragging(null); setDrop(null); } };
+    const close = () => { setContext(null); setAddMenuOpen(false); };
+    const cancelDrag = (event: KeyboardEvent) => { if (event.key === 'Escape') { setDragging(null); setDrop(null); setAddMenuOpen(false); } };
     window.addEventListener('click', close);
     window.addEventListener('keydown', cancelDrag);
     return () => { window.removeEventListener('click', close); window.removeEventListener('keydown', cancelDrag); };
@@ -66,6 +70,21 @@ export function CollectionsSidebar({ onToast, onViewChange, onWorkspaceChange }:
   const createCollection = async () => {
     try { const id = await useCollectionStore.getState().createCollection('New collection'); startEditing(id, 'New collection'); }
     catch (error) { onToast({ title: 'Could not create collection', detail: String(error), tone: 'error' }); }
+  };
+  const importCollection = async (file: File) => {
+    setImporting(true);
+    try {
+      const fallback = file.name.replace(/\.postman_collection\.json$|\.json$/i, '');
+      const imported = parsePostmanCollection(JSON.parse(await file.text()), fallback);
+      await useCollectionStore.getState().importCollection(imported.name, imported.root);
+      const detail = `${imported.requestCount} requests · ${imported.folderCount} folders · ${imported.responseCount} saved responses${imported.warnings[0] ? ` · ${imported.warnings[0]}` : ''}`;
+      onToast({ title: `Imported ${imported.name}`, detail });
+    } catch (error) {
+      onToast({ title: 'Could not import collection', detail: String(error).replace(/^Error:\s*/, ''), tone: 'error' });
+    } finally {
+      setImporting(false);
+      if (importInputRef.current) importInputRef.current.value = '';
+    }
   };
   const commitEditing = async () => {
     const target = editing;
@@ -174,7 +193,11 @@ export function CollectionsSidebar({ onToast, onViewChange, onWorkspaceChange }:
   };
 
   return <>
-    <SidebarNav active="collections" onChange={onViewChange} action={<button className="icon-button sidebar-add" title="New collection" onClick={() => void createCollection()}><Plus size={15} /></button>} />
+    <SidebarNav active="collections" onChange={onViewChange} action={<div className="sidebar-add-wrap" onClick={(event) => event.stopPropagation()}>
+      <button className={`icon-button sidebar-add${addMenuOpen ? ' active' : ''}`} title="Add collection" aria-expanded={addMenuOpen} onClick={() => setAddMenuOpen((open) => !open)}><Plus size={15} /></button>
+      {addMenuOpen && <div className="sidebar-add-menu" role="menu"><button onClick={() => { setAddMenuOpen(false); void createCollection(); }}><FolderPlus size={13} /><span><b>New collection</b><small>Create an empty collection</small></span></button><button disabled={importing} onClick={() => { setAddMenuOpen(false); importInputRef.current?.click(); }}>{importing ? <span className="spinner accent-spinner" /> : <FileUp size={13} />}<span><b>Import…</b><small>Postman collection JSON</small></span></button></div>}
+      <input ref={importInputRef} className="collection-import-input" type="file" accept=".json,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importCollection(file); }} />
+    </div>} />
     <SidebarSearch placeholder="Search requests" value={query} onChange={setQuery} />
     <div className="tree virtual-tree" ref={treeRef} onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)} onContextMenu={(event) => { event.preventDefault(); const fallback = collectionState.summaries.find((summary) => collectionState.expandedIds[summary.id])?.id ?? collectionState.summaries[0]?.id ?? ''; setContext({ x: event.clientX, y: event.clientY, collectionId: fallback, type: 'empty' }); }}>
       {!rows.length && <div className="sidebar-empty"><FolderPlus size={24} /><span>{query ? 'No matching requests' : 'No collections yet'}</span>{!query && <button onClick={() => void createCollection()}>New collection</button>}</div>}

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { Collection, CollectionSummary, TesApiRequest, TesApiResponse } from '../types';
-import { denormalizeCollection, isDescendant, normalizeCollection, ROOT, type FlatNode } from '../lib/collections';
+import type { Collection, CollectionSummary, TesApiRequest, TesApiResponse, TreeNode } from '../types';
+import { countNodes, denormalizeCollection, isDescendant, normalizeCollection, ROOT, type FlatNode } from '../lib/collections';
 import { uid } from '../lib/id';
 import { storageProvider } from '../lib/storage/localJson';
 
@@ -15,6 +15,7 @@ interface State {
   loadAll: () => Promise<void>;
   setExpanded: (id: string, expanded: boolean) => void;
   createCollection: (name: string) => Promise<string>;
+  importCollection: (name: string, root: TreeNode[]) => Promise<string>;
   renameCollection: (id: string, name: string) => Promise<void>;
   deleteCollection: (id: string) => Promise<void>;
   createFolder: (collectionId: string, parentId: string | null, name: string) => Promise<string>;
@@ -93,6 +94,19 @@ export const useCollectionStore = create<State>((set, get) => ({
     await persist(normalized);
     set((state) => ({
       summaries: [...state.summaries, { id, name: normalized.name, requestCount: 0, folderCount: 0 }],
+      collectionsById: { ...state.collectionsById, [id]: normalized },
+      expandedIds: { ...state.expandedIds, [id]: true },
+    }));
+    return id;
+  },
+  importCollection: async (name, root) => {
+    const id = uid();
+    const value: Collection = { id, name: name.trim() || 'Imported collection', schemaVersion: 1, root };
+    const normalized = normalizeCollection(value);
+    const counts = countNodes(value);
+    await persist(normalized);
+    set((state) => ({
+      summaries: [...state.summaries, { id, name: value.name, ...counts }],
       collectionsById: { ...state.collectionsById, [id]: normalized },
       expandedIds: { ...state.expandedIds, [id]: true },
     }));

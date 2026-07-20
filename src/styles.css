@@ -106,10 +106,20 @@ code, .mono { font-family: var(--font-mono); }
 body.layout-resizing { user-select: none; }
 body.layout-resizing.resize-column, body.layout-resizing.resize-column * { cursor: col-resize !important; }
 body.layout-resizing.resize-row, body.layout-resizing.resize-row * { cursor: row-resize !important; }
-.sidebar-header { display: flex; align-items: center; gap: 4px; min-height: 45px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.sidebar-header { position: relative; display: flex; align-items: center; gap: 4px; min-height: 45px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 .icon-button { display: grid; width: 28px; height: 28px; place-items: center; border-radius: var(--radius); color: var(--text-muted); }
 .icon-button:hover, .icon-button.active { background: var(--bg-elevated); color: var(--accent); }
 .sidebar-add { margin-left: auto; }
+.sidebar-add-wrap { position: relative; margin-left: auto; }
+.sidebar-add-wrap .sidebar-add { margin-left: 0; }
+.sidebar-add-menu { position: absolute; z-index: 44; top: 32px; right: 0; width: 188px; padding: 5px; border: 1px solid var(--border); border-radius: 8px; background: color-mix(in srgb, var(--bg-panel) 97%, black); box-shadow: 0 16px 44px rgb(0 0 0 / 46%); animation: workspace-popover-in 120ms ease-out; }
+.sidebar-add-menu > button { display: flex; width: 100%; min-height: 43px; align-items: center; gap: 9px; padding: 0 8px; border-radius: 6px; color: var(--text-muted); text-align: left; }
+.sidebar-add-menu > button:hover:not(:disabled) { background: var(--bg-elevated); color: var(--text-primary); }
+.sidebar-add-menu > button:disabled { cursor: wait; opacity: .5; }
+.sidebar-add-menu > button > span:last-child { display: flex; min-width: 0; flex-direction: column; gap: 1px; }
+.sidebar-add-menu b { color: var(--text-primary); font-size: 11px; font-weight: 600; }
+.sidebar-add-menu small { color: var(--text-muted); font-size: 9.5px; }
+.collection-import-input { display: none; }
 .sidebar-search { padding: 10px 10px 4px; }
 .search-box { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px 0 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-elevated); }
 .search-box:focus-within { box-shadow: 0 0 0 2px var(--accent); }
