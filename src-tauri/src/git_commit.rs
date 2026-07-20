@@ -32,6 +32,25 @@ pub fn commit_paths(repo: &Repository, paths: &[&str], message: &str) -> Result<
     commit_index(repo, &mut index, message)
 }
 
+pub fn commit_selection(repo: &Repository, paths: &[&str], message: &str) -> Result<bool, String> {
+    let mut index = repo.index().map_err(|error| error.message().to_owned())?;
+    if let Ok(tree) = repo.head().and_then(|head| head.peel_to_tree()) {
+        index
+            .read_tree(&tree)
+            .map_err(|error| error.message().to_owned())?;
+    } else {
+        index.clear().map_err(|error| error.message().to_owned())?;
+    }
+    index
+        .add_all(paths.iter().copied(), IndexAddOption::DEFAULT, None)
+        .map_err(|error| error.message().to_owned())?;
+    index
+        .update_all(paths.iter().copied(), None)
+        .map_err(|error| error.message().to_owned())?;
+    index.write().map_err(|error| error.message().to_owned())?;
+    commit_index(repo, &mut index, message)
+}
+
 pub fn commit_tesapi_dirty(repo: &Repository, message: &str) -> Result<bool, String> {
     commit_paths(repo, TESAPI_PATHS, message)
 }

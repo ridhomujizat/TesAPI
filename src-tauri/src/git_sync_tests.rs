@@ -29,6 +29,46 @@ fn seed(remote: &Path) -> (PathBuf, PathBuf) {
 }
 
 #[test]
+fn empty_remote_is_initialized_by_first_sync() {
+    let root = temp("empty-remote");
+    let remote = root.join("remote.git");
+    let client = root.join("client");
+    fs::create_dir_all(&root).unwrap();
+    git2::Repository::init_bare(&remote).unwrap();
+    let repo = git_transport::clone_repo(remote.to_str().unwrap(), "main", &client).unwrap();
+    fs::write(client.join("workspace.json"), "{\"name\":\"local\"}\n").unwrap();
+    git_commit::commit_all(&repo, "initial").unwrap();
+
+    let result =
+        git_sync::sync_workspace(&client, "main", Arc::new(AtomicBool::new(false))).unwrap();
+
+    assert_eq!(result.state, "synced");
+    assert!(git2::Repository::open_bare(&remote)
+        .unwrap()
+        .find_reference("refs/heads/main")
+        .is_ok());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn corrupt_fetch_head_is_replaced_before_fetch() {
+    let root = temp("fetch-head");
+    let remote = root.join("remote.git");
+    fs::create_dir_all(&root).unwrap();
+    git2::Repository::init_bare(&remote).unwrap();
+    seed(&remote);
+    let client = root.join("client");
+    let repo = git_transport::clone_repo(remote.to_str().unwrap(), "main", &client).unwrap();
+    fs::write(repo.path().join("FETCH_HEAD"), "broken ref contents\n").unwrap();
+
+    let result =
+        git_sync::sync_workspace(&client, "main", Arc::new(AtomicBool::new(false))).unwrap();
+
+    assert_eq!(result.state, "synced");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn different_files_merge_and_push() {
     let root = temp("files");
     let remote = root.join("remote.git");

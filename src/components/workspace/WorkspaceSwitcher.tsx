@@ -9,12 +9,16 @@ interface Props {
   onOpenHere: (workspace: WorkspaceRecord) => void;
   onOpenWindow: (workspace: WorkspaceRecord) => void;
   onRename: (id: string, name: string) => Promise<void>;
+  onGitMenu?: () => void;
+  gitDirtyCount?: number;
+  gitBusy?: boolean;
+  gitBranch?: string;
 }
 
 const colors = ['#6E9BFF', '#3FB68B', '#F0A030', '#B98AF0', '#4A9EDE', '#E5534B'];
 const avatarColor = (id: string) => colors[[...id].reduce((sum, char) => sum + char.charCodeAt(0), 0) % colors.length];
 
-export function WorkspaceSwitcher({ current, workspaces, onCreate, onOpenHere, onOpenWindow, onRename }: Props) {
+export function WorkspaceSwitcher({ current, workspaces, onCreate, onOpenHere, onOpenWindow, onRename, onGitMenu, gitDirtyCount = 0, gitBusy = false, gitBranch }: Props) {
   const [open, setOpen] = useState(false);
   const [recentOpen, setRecentOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(() => Math.max(0, workspaces.findIndex((item) => item.id === current.id)));
@@ -70,7 +74,7 @@ export function WorkspaceSwitcher({ current, workspaces, onCreate, onOpenHere, o
         <span className="workspace-avatar" style={{ '--workspace-color': avatarColor(current.id) } as React.CSSProperties}>{current.name.charAt(0).toUpperCase()}</span>
         <span className="workspace-current-name">{current.name}</span><ChevronsUpDown size={13} />
       </button>
-      <span className="workspace-sync-badge">{current.syncType === 'git' ? <GitBranch size={11} /> : <HardDrive size={11} />}{current.syncType === 'git' ? current.gitBranch ?? 'main' : 'local'}</span>
+      {current.syncType === 'git' ? <button className={`workspace-sync-badge git-trigger${gitDirtyCount ? ' dirty' : ''}`} onClick={onGitMenu} title="Git workspace menu"><GitBranch size={11} />{gitBranch ?? current.gitBranch ?? 'main'}{gitBusy ? <span className="spinner tiny-spinner" /> : gitDirtyCount > 0 ? <b>{gitDirtyCount}</b> : null}</button> : <span className="workspace-sync-badge"><HardDrive size={11} />local</span>}
     </div>
     {open && <div className="workspace-popover" role="menu">
       <div className="workspace-popover-label">WORKSPACES</div>

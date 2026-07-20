@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { CollectionsSidebar } from './sidebar/CollectionsSidebar';
 import { EnvironmentSidebar } from './sidebar/EnvironmentSidebar';
 import { HistorySidebar } from './sidebar/HistorySidebar';
@@ -6,6 +5,9 @@ import type { ToastMessage } from '../Toast';
 import type { SidebarView, WorkspaceView } from './sidebar/types';
 import type { WorkspaceRecord } from '../../types';
 import { WorkspaceSwitcher } from '../workspace/WorkspaceSwitcher';
+import { GitMenu } from '../git/components/GitMenu';
+import { useGitStore } from '../../store/gitStore';
+import { useCallback, useState } from 'react';
 
 export type { WorkspaceView } from './sidebar/types';
 
@@ -22,6 +24,10 @@ interface Props {
 
 export function Sidebar({ currentWorkspace, workspaces, onToast, onWorkspaceChange, onCreateWorkspace, onOpenWorkspace, onOpenWorkspaceWindow, onRenameWorkspace }: Props) {
   const [view, setView] = useState<SidebarView>('collections');
+  const [gitMenuOpen, setGitMenuOpen] = useState(false);
+  const git = useGitStore();
+  const toggleGitMenu = useCallback(() => setGitMenuOpen((value) => !value), []);
+  const closeGitMenu = useCallback(() => setGitMenuOpen(false), []);
 
   const changeView = (next: SidebarView) => {
     setView(next);
@@ -29,7 +35,8 @@ export function Sidebar({ currentWorkspace, workspaces, onToast, onWorkspaceChan
   };
 
   return <aside className="sidebar" onContextMenu={(event) => event.preventDefault()}>
-    <WorkspaceSwitcher current={currentWorkspace} workspaces={workspaces} onCreate={onCreateWorkspace} onOpenHere={onOpenWorkspace} onOpenWindow={onOpenWorkspaceWindow} onRename={onRenameWorkspace} />
+    <WorkspaceSwitcher current={currentWorkspace} workspaces={workspaces} onCreate={onCreateWorkspace} onOpenHere={onOpenWorkspace} onOpenWindow={onOpenWorkspaceWindow} onRename={onRenameWorkspace} onGitMenu={toggleGitMenu} gitDirtyCount={git.entities.length} gitBusy={!!git.inFlight} gitBranch={git.status?.branch} />
+    {currentWorkspace.syncType === 'git' && <GitMenu open={gitMenuOpen} onClose={closeGitMenu} workspace={currentWorkspace} onToast={onToast} />}
     {view === 'collections' && <CollectionsSidebar onToast={onToast} onViewChange={changeView} onWorkspaceChange={onWorkspaceChange} />}
     {view === 'history' && <HistorySidebar onToast={onToast} onViewChange={changeView} />}
     {view === 'environments' && <EnvironmentSidebar onToast={onToast} onViewChange={changeView} onWorkspaceChange={onWorkspaceChange} />}

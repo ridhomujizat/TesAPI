@@ -25,6 +25,15 @@ for design, crul copy paste( in input url and can covert to that format) crul, h
 - New windows receive `?workspaceId=` and register their workspace with the Rust window map so repeated opens focus the existing window.
 - Git synchronization stays behind provider-level hooks: Rust owns init/clone/commit/push/pull, while local writes always complete before a sync warning is shown.
 
+## Phase 6 implementation notes
+
+- Git UI code is feature-scoped under `src/components/git/`, `src/lib/git/`, and `src/store/gitStore.ts`; queued native commands are split across focused `src-tauri/src/git_*` modules.
+- Manual commits are the default. Saving writes JSON atomically and refreshes Git status; per-workspace `autoCommitOnSave` is the only path that restores commit-on-save behavior.
+- UI diffs normalize and stable-sort entity JSON before producing field lines. Never show a raw text diff of collection/request files.
+- Push, pull, commit, checkout, discard, reset, branch, and remote mutations must use the per-workspace Rust queue. Flush pending writes before worktree mutations and rehydrate workspace stores afterward.
+- Network Git operations use the system `git` CLI so TesAPI reuses the user's credential helpers, SSH agent, and GitHub CLI authentication. Local repository inspection and mutations continue to use `git2`.
+- Sidecar files and `.tesapi-conflict.json` are conflict state, not workspace entities. Keep them out of collection enumeration and normal Git change lists.
+
 ## Implementation and refactoring rules
 
 - Preserve existing behavior, imports, exports, backward compatibility, and current naming conventions.

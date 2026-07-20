@@ -1,13 +1,18 @@
 mod db;
 #[cfg(test)]
 mod db_tests;
+mod git_branches;
 mod git_commands;
 mod git_commit;
 mod git_conflict;
+mod git_history;
+mod git_status;
 mod git_sync;
 #[cfg(test)]
 mod git_sync_tests;
 mod git_transport;
+mod git_ui_commands;
+mod git_worktree;
 mod http;
 mod registry_commands;
 mod storage;
@@ -21,13 +26,6 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // libgit2 timeout options are process-global and must be set before Tauri starts threads.
-    unsafe {
-        git2::opts::set_server_connect_timeout_in_milliseconds(10_000)
-            .expect("failed to configure git connect timeout");
-        git2::opts::set_server_timeout_in_milliseconds(10_000)
-            .expect("failed to configure git server timeout");
-    }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -59,6 +57,21 @@ pub fn run() {
             git_commands::git_workspace_conflicts,
             git_commands::git_resolve_workspace_conflict,
             git_commands::git_set_identity,
+            git_ui_commands::git_workspace_status,
+            git_ui_commands::git_read_workspace_source,
+            git_ui_commands::git_commit_workspace_selection,
+            git_ui_commands::git_push_workspace,
+            git_ui_commands::git_workspace_log,
+            git_ui_commands::git_workspace_branches,
+            git_ui_commands::git_checkout_workspace_branch,
+            git_ui_commands::git_create_workspace_branch,
+            git_ui_commands::git_rename_workspace_branch,
+            git_ui_commands::git_delete_workspace_branch,
+            git_ui_commands::git_discard_workspace_paths,
+            git_ui_commands::git_reset_workspace_hard,
+            git_ui_commands::git_workspace_remote,
+            git_ui_commands::git_set_workspace_remote,
+            git_ui_commands::git_test_workspace_remote,
             http::send_request,
             storage::ensure_dirs,
             storage::read_json,

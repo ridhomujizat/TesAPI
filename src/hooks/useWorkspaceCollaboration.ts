@@ -94,7 +94,7 @@ export function useWorkspaceCollaboration(
     try {
       await invoke('git_set_identity', { rootPath: workspace.rootPath, name, email });
       await setSetting('git_identity', { name, email });
-      storageProvider.enableGitSync();
+      storageProvider.enableGitSync(await getSetting<boolean>(`workspace:${workspace.id}:autoCommitOnSave`) === true);
       await retrySync();
       setIdentityOpen(false);
     } catch (error) {

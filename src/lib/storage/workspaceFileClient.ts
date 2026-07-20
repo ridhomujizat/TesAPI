@@ -18,6 +18,7 @@ export class WorkspaceFileClient {
   private pending = new Set<Promise<unknown>>();
   private readOnlyMessage: string | null = null;
   private gitSyncEnabled = false;
+  private autoCommitOnSave = false;
 
   constructor(private readonly onWarning: (message: string) => void = () => undefined) {}
 
@@ -26,13 +27,14 @@ export class WorkspaceFileClient {
     this.hashes.clear();
     this.readOnlyMessage = null;
     this.gitSyncEnabled = workspace.syncType !== 'git';
+    this.autoCommitOnSave = false;
   }
 
   currentWorkspace(): WorkspaceRecord | null { return this.workspace; }
   rootPath(): string { return this.current().rootPath; }
   isReadOnly(): boolean { return this.readOnlyMessage !== null; }
   readOnlyReason(): string | null { return this.readOnlyMessage; }
-  enableGitSync(): void { this.gitSyncEnabled = true; }
+  enableGitSync(autoCommitOnSave = true): void { this.gitSyncEnabled = true; this.autoCommitOnSave = autoCommitOnSave; }
 
   guardSchema(relativePath: string, version: number | undefined, supported: number): void {
     if (version == null || version <= supported || this.readOnlyMessage) return;
@@ -146,7 +148,9 @@ export class WorkspaceFileClient {
   }
 
   scheduleGit(paths: string[]): void {
-    if (this.isReadOnly() || !this.gitSyncEnabled || this.current().syncType !== 'git' || paths.length === 0) return;
+    if (paths.length === 0 || this.current().syncType !== 'git') return;
+    window.dispatchEvent(new CustomEvent('tesapi-workspace-saved', { detail: { paths } }));
+    if (this.isReadOnly() || !this.gitSyncEnabled || !this.autoCommitOnSave) return;
     const promise = invoke<boolean>('git_commit_workspace_paths', {
       rootPath: this.current().rootPath,
       relativePaths: [...new Set(paths)],

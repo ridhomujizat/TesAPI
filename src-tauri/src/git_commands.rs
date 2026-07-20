@@ -127,7 +127,7 @@ pub async fn git_set_identity(
     .await
 }
 
-async fn queued<T, F>(
+pub(crate) async fn queued<T, F>(
     root_path: String,
     state: State<'_, WorkspaceQueueState>,
     operation: F,
@@ -148,7 +148,7 @@ where
     .map_err(|error| error.to_string())?
 }
 
-async fn queued_git<T, F>(
+pub(crate) async fn queued_git<T, F>(
     root_path: String,
     state: State<'_, WorkspaceQueueState>,
     operation: F,

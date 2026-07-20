@@ -5,6 +5,7 @@ import { useEnvironmentStore } from '../../store/environmentStore';
 import { useRequestStore } from '../../store/requestStore';
 import { getSetting, registerWorkspaceWindow, setSetting, setWorkspaceWindowTitle, touchLastOpened } from '../registry';
 import { storageProvider } from '../storage/localJson';
+import { normalizeForCompare } from '../collections';
 
 export type WorkspaceSyncState = 'idle' | 'synced' | 'paused' | 'conflicted';
 interface GitSyncResult { state: WorkspaceSyncState }
@@ -31,6 +32,32 @@ export function resetWorkspaceStores(): void {
   useEnvironmentStore.getState().reset();
 }
 
+export async function rehydrateWorkspaceStores(workspace: WorkspaceRecord): Promise<void> {
+  await storageProvider.flush();
+  resetWorkspaceStores();
+  storageProvider.configure(workspace);
+  await storageProvider.inspectCompatibility();
+  if (workspace.syncType === 'git' && !storageProvider.isReadOnly()) {
+    storageProvider.enableGitSync(await getSetting<boolean>(`workspace:${workspace.id}:autoCommitOnSave`) === true);
+  }
+  await useCollectionStore.getState().initialize();
+  await useCollectionStore.getState().loadAll();
+  await useEnvironmentStore.getState().initialize();
+  const session = await storageProvider.loadSession();
+  if (session) {
+    const collections = useCollectionStore.getState().collectionsById;
+    const tabs = session.tabs.flatMap((tab) => {
+      if (!tab.origin) return [tab];
+      const node = collections[tab.origin.collectionId]?.nodesById[tab.origin.nodeId];
+      if (!node || node.type !== 'request') return [];
+      const draft = { ...node.request, name: node.name };
+      return [{ ...tab, draft, savedSnapshot: normalizeForCompare(draft) }];
+    });
+    useRequestStore.getState().restoreSession({ ...session, tabs, activeTabId: tabs.some((tab) => tab.id === session.activeTabId) ? session.activeTabId : tabs[0]?.id ?? '' });
+    for (const id of session.expandedIds ?? []) useCollectionStore.getState().setExpanded(id, true);
+  }
+}
+
 export async function loadWorkspace(workspace: WorkspaceRecord): Promise<WorkspaceLoadResult> {
   if (storageProvider.currentWorkspace()) await storageProvider.flush();
   resetWorkspaceStores();
@@ -43,7 +70,8 @@ export async function loadWorkspace(workspace: WorkspaceRecord): Promise<Workspa
     : null;
   if (workspace.syncType === 'git' && identity && !storageProvider.isReadOnly()) {
     await invoke('git_set_identity', { rootPath: workspace.rootPath, name: identity.name, email: identity.email });
-    storageProvider.enableGitSync();
+    const autoCommit = await getSetting<boolean>(`workspace:${workspace.id}:autoCommitOnSave`);
+    storageProvider.enableGitSync(autoCommit === true);
   }
   if (workspace.syncType === 'git' && identity && !storageProvider.isReadOnly()) {
     try {

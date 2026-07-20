@@ -52,4 +52,19 @@ TesAPI now keeps the workspace registry and app settings in `tesapi/app.db` usin
 
 The sidebar workspace switcher can replace the current window or open a workspace in a separate Tauri window. Replacing a workspace protects dirty tabs with Save all / Discard / Cancel and restores the destination workspace's own session, collections, history, and environments.
 
-New workspaces can be local or Git-backed. Git workspaces initialize or clone a repository, commit collection/environment saves, push when a remote exists, and fast-forward pull on open. History and session files stay machine-local through the generated `.gitignore`; Cloud remains a disabled "Soon" option.
+New workspaces can be local or Git-backed. Git workspaces initialize or clone a repository and use the conflict-safe Phase 5.5 sync loop on pull/open. History and session files stay machine-local through the generated `.gitignore`; Cloud remains a disabled "Soon" option.
+
+## Phase 6 Git workflow
+
+Git workspaces expose a branch badge in the workspace bar. Its menu provides status, history, remotes, branches, push/pull, commit, and reset actions. Manual commits are the default; "Auto-commit on save" is an optional per-workspace setting.
+
+The commit sheet groups changed request files by collection, supports subset commits and per-entity discard, and renders normalized side-by-side JSON field diffs. Git operations are serialized through the Rust workspace queue, and worktree-changing actions flush writes and reload the frontend stores before returning control.
+
+Fetch, push, and remote connection checks run through the installed system `git` CLI, allowing TesAPI to reuse existing credential helpers, SSH agents, and `gh auth` configuration. Local status, commits, diffs, merges, and conflict handling remain implemented with `git2`.
+
+Run the Phase 6 mapping and diff checks with Node 22+:
+
+```sh
+node src/lib/git/status.test.ts
+node src/lib/git/lineDiff.test.ts
+```

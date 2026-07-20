@@ -28,6 +28,7 @@ import { useWorkspaceController } from './hooks/useWorkspaceController';
 import { useWorkspaceCollaboration } from './hooks/useWorkspaceCollaboration';
 import type { HistoryEntry, SessionState, WorkspaceRecord } from './types';
 import { OPEN_VARIABLES_EVENT } from './components/VariablePopover';
+import { useGitStore } from './store/gitStore';
 
 function validUrl(url: string): boolean {
   try {
@@ -56,6 +57,18 @@ export default function App() {
   const showToast = useCallback((message: ToastMessage) => setToast(message), []);
   const workspace = useWorkspaceController(showToast);
   const collaboration = useWorkspaceCollaboration(workspace.current, workspace.ready, workspace.retrySync, showToast);
+
+  useEffect(() => {
+    useGitStore.getState().configure(workspace.current);
+    if (workspace.ready && workspace.current?.syncType === 'git') void useGitStore.getState().refresh().catch(() => undefined);
+  }, [workspace.current?.id, workspace.ready]);
+
+  useEffect(() => {
+    const refresh = () => { if (useGitStore.getState().rootPath) void useGitStore.getState().refresh().catch(() => undefined); };
+    window.addEventListener('focus', refresh);
+    window.addEventListener('tesapi-workspace-saved', refresh);
+    return () => { window.removeEventListener('focus', refresh); window.removeEventListener('tesapi-workspace-saved', refresh); };
+  }, []);
 
   useEffect(() => {
     if (!workspace.ready || !workspace.current || storageProvider.isReadOnly()) return;

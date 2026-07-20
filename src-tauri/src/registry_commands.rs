@@ -6,7 +6,6 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::{
     db::{map_workspace, new_id, now, RegistryState, WorkspaceRecord},
-    git_sync,
     workspace::{self, WorkspaceFile},
     workspace_io::WorkspaceQueueState,
 };
@@ -193,10 +192,6 @@ pub fn registry_rename_workspace(
             git_branch: record.git_branch.clone(),
         },
     )?;
-    if record.sync_type == "git" {
-        let repo = git2::Repository::open(root).map_err(|error| error.message().to_owned())?;
-        git_sync::commit_relative_paths(&repo, &["workspace.json".into()])?;
-    }
     connection
         .execute(
             "UPDATE workspaces SET name=?1 WHERE id=?2",

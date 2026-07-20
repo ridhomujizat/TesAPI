@@ -47,10 +47,6 @@ impl SyncResult {
     }
 }
 
-pub(crate) fn commit_relative_paths(repo: &Repository, paths: &[String]) -> Result<bool, String> {
-    git_commit::commit_relative_paths(repo, paths)
-}
-
 fn fast_forward(repo: &Repository, branch: &str, target: Oid) -> Result<(), String> {
     let commit = repo
         .find_commit(target)
@@ -129,6 +125,7 @@ pub fn sync_workspace(
 
     for attempt in 0..3 {
         let Some(remote_oid) = git_transport::fetch(&repo, branch, cancel.clone())? else {
+            git_transport::push(&repo)?;
             return Ok(SyncResult::synced());
         };
         let local_oid = repo

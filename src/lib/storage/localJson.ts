@@ -43,7 +43,7 @@ export class LocalJsonProvider implements StorageProvider {
   isReadOnly(): boolean { return this.files.isReadOnly(); }
   readOnlyReason(): string | null { return this.files.readOnlyReason(); }
   inspectCompatibility(): Promise<void> { return this.detectForwardCompatibility(); }
-  enableGitSync(): void { this.files.enableGitSync(); }
+  enableGitSync(autoCommitOnSave = true): void { this.files.enableGitSync(autoCommitOnSave); }
 
   async initialize(): Promise<WorkspaceMeta> {
     const workspace = this.requiredWorkspace();
