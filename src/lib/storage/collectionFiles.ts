@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Collection, CollectionSummary, TesApiRequest, TreeNode, WorkspaceRecord } from '../../types';
+import type { Collection, CollectionSummary, SavedResponse, TesApiRequest, TreeNode, WorkspaceRecord } from '../../types';
 import { countNodes } from '../collections';
 import {
   collectionMetaRelativePath,
@@ -19,12 +19,12 @@ type CollectionTreeNode =
   | { id: string; type: 'folder'; name: string; children: CollectionTreeNode[] }
   | { id: string; type: 'request'; name: string };
 interface CollectionTreeFile { schemaVersion: number; root: CollectionTreeNode[] }
-interface RequestFile { schemaVersion: number; id: string; name: string; request: TesApiRequest }
+interface RequestFile { schemaVersion: number; id: string; name: string; request: TesApiRequest; savedResponses?: SavedResponse[] }
 
 function splitTree(nodes: TreeNode[], requests: RequestFile[]): CollectionTreeNode[] {
   return nodes.map((node) => {
     if (node.type === 'folder') return { id: node.id, type: 'folder', name: node.name, children: splitTree(node.children, requests) };
-    requests.push({ schemaVersion: COLLECTION_SCHEMA, id: node.id, name: node.name, request: node.request });
+    requests.push({ schemaVersion: COLLECTION_SCHEMA, id: node.id, name: node.name, request: node.request, savedResponses: node.savedResponses });
     return { id: node.id, type: 'request', name: node.name };
   });
 }
@@ -39,7 +39,7 @@ async function assembleTree(nodes: CollectionTreeNode[], collectionId: string, c
     const file = await client.readJson<RequestFile>(collectionRequestRelativePath(collectionId, node.id));
     if (!file) throw new Error(`Request file is missing: ${node.id}`);
     client.guardSchema(collectionRequestRelativePath(collectionId, node.id), file.schemaVersion, COLLECTION_SCHEMA);
-    return { id: node.id, type: 'request' as const, name: file.name || node.name, request: file.request };
+    return { id: node.id, type: 'request' as const, name: file.name || node.name, request: file.request, savedResponses: file.savedResponses };
   }));
 }
 

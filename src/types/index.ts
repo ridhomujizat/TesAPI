@@ -47,6 +47,12 @@ export interface TesApiRequest {
   auth: Auth;
 }
 
+export interface SavedResponse {
+  id: string;
+  name: string;
+  response: TesApiResponse;
+}
+
 export interface WorkspaceStorage {
   type: 'local' | 'git' | 'cloud';
   rootPath?: string;
@@ -96,7 +102,7 @@ export interface CollectionSummary {
 
 export type TreeNode =
   | { id: string; type: 'folder'; name: string; children: TreeNode[] }
-  | { id: string; type: 'request'; name: string; request: TesApiRequest };
+  | { id: string; type: 'request'; name: string; request: TesApiRequest; savedResponses?: SavedResponse[] };
 
 export interface Collection {
   id: string;

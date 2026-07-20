@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Collection, CollectionSummary, TesApiRequest } from '../types';
+import type { Collection, CollectionSummary, TesApiRequest, TesApiResponse } from '../types';
 import { denormalizeCollection, isDescendant, normalizeCollection, ROOT, type FlatNode } from '../lib/collections';
 import { uid } from '../lib/id';
 import { storageProvider } from '../lib/storage/localJson';
@@ -19,6 +19,8 @@ interface State {
   deleteCollection: (id: string) => Promise<void>;
   createFolder: (collectionId: string, parentId: string | null, name: string) => Promise<string>;
   saveRequest: (collectionId: string, parentId: string | null, name: string, request: TesApiRequest, nodeId?: string) => Promise<string>;
+  saveResponse: (collectionId: string, nodeId: string, name: string, response: TesApiResponse) => Promise<string>;
+  deleteResponse: (collectionId: string, nodeId: string, responseId: string) => Promise<void>;
   renameNode: (collectionId: string, nodeId: string, name: string) => Promise<void>;
   deleteNode: (collectionId: string, nodeId: string) => Promise<string[]>;
   duplicateNode: (collectionId: string, nodeId: string) => Promise<string>;
@@ -137,7 +139,7 @@ export const useCollectionStore = create<State>((set, get) => ({
       ...current,
       nodesById: {
         ...current.nodesById,
-        [id]: { id, collectionId, parentId: existing?.parentId ?? parentId, type: 'request', name: name.trim() || 'Untitled request', request: { ...request, name: name.trim() || request.name } },
+        [id]: { id, collectionId, parentId: existing?.parentId ?? parentId, type: 'request', name: name.trim() || 'Untitled request', request: { ...request, name: name.trim() || request.name }, savedResponses: existing?.type === 'request' ? existing.savedResponses : undefined },
       },
       childIdsByParent: existing ? current.childIdsByParent : { ...current.childIdsByParent, [parentId ?? ROOT]: [...(current.childIdsByParent[parentId ?? ROOT] ?? []), id] },
     };
@@ -145,6 +147,26 @@ export const useCollectionStore = create<State>((set, get) => ({
     const requestCount = Object.values(next.nodesById).filter((node) => node.type === 'request').length;
     set((state) => ({ collectionsById: withCollection(state, collectionId, () => next), summaries: state.summaries.map((summary) => summary.id === collectionId ? { ...summary, requestCount } : summary) }));
     return id;
+  },
+  saveResponse: async (collectionId, nodeId, name, response) => {
+    const current = get().collectionsById[collectionId];
+    const node = current?.nodesById[nodeId];
+    if (!current || node?.type !== 'request') throw new Error('Save the request before saving its response.');
+    const id = uid();
+    const updated = { ...node, savedResponses: [...(node.savedResponses ?? []), { id, name: name.trim() || 'Response', response }] };
+    const next = { ...current, nodesById: { ...current.nodesById, [nodeId]: updated } };
+    await persist(next);
+    set((state) => ({ collectionsById: withCollection(state, collectionId, () => next), expandedIds: { ...state.expandedIds, [nodeId]: true } }));
+    return id;
+  },
+  deleteResponse: async (collectionId, nodeId, responseId) => {
+    const current = get().collectionsById[collectionId];
+    const node = current?.nodesById[nodeId];
+    if (!current || node?.type !== 'request') return;
+    const updated = { ...node, savedResponses: (node.savedResponses ?? []).filter((item) => item.id !== responseId) };
+    const next = { ...current, nodesById: { ...current.nodesById, [nodeId]: updated } };
+    await persist(next);
+    set((state) => ({ collectionsById: withCollection(state, collectionId, () => next) }));
   },
   renameNode: async (collectionId, nodeId, name) => {
     const current = get().collectionsById[collectionId];

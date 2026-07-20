@@ -1,8 +1,8 @@
-import type { Collection, TesApiRequest, KeyValue, TreeNode } from '../types';
+import type { Collection, TesApiRequest, KeyValue, SavedResponse, TreeNode } from '../types';
 
 export type FlatNode =
   | { id: string; collectionId: string; parentId: string | null; type: 'folder'; name: string }
-  | { id: string; collectionId: string; parentId: string | null; type: 'request'; name: string; request: TesApiRequest };
+  | { id: string; collectionId: string; parentId: string | null; type: 'request'; name: string; request: TesApiRequest; savedResponses?: SavedResponse[] };
 
 export interface NormalizedCollection {
   collectionId: string;
@@ -22,7 +22,7 @@ export function normalizeCollection(collection: Collection): NormalizedCollectio
     for (const node of nodes) {
       const flat: FlatNode = node.type === 'folder'
         ? { id: node.id, collectionId: collection.id, parentId, type: 'folder', name: node.name }
-        : { id: node.id, collectionId: collection.id, parentId, type: 'request', name: node.name, request: node.request };
+        : { id: node.id, collectionId: collection.id, parentId, type: 'request', name: node.name, request: node.request, savedResponses: node.savedResponses };
       nodesById[node.id] = flat;
       childIdsByParent[parentKey].push(node.id);
       if (node.type === 'folder') {
@@ -44,7 +44,7 @@ export function denormalizeCollection(normalized: NormalizedCollection): Collect
       if (!node) continue;
       nodes.push(node.type === 'folder'
         ? { id: node.id, type: 'folder', name: node.name, children: visit(node.id) }
-        : { id: node.id, type: 'request', name: node.name, request: node.request });
+        : { id: node.id, type: 'request', name: node.name, request: node.request, savedResponses: node.savedResponses });
     }
     return nodes;
   };

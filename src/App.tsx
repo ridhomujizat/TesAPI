@@ -5,6 +5,7 @@ import { SecretReviewDialog } from './components/environment/SecretReviewDialog'
 import { RequestBuilder } from './components/request/RequestBuilder';
 import { EmptyRequestState } from './components/request/EmptyRequestState';
 import { ResponseViewer } from './components/response/ResponseViewer';
+import { SaveResponseModal } from './components/response/SaveResponseModal';
 import { SaveRequestModal } from './components/SaveRequestModal';
 import { CloseTabDialog } from './components/CloseTabDialog';
 import { CreateWorkspaceModal } from './components/workspace/CreateWorkspaceModal';
@@ -42,9 +43,11 @@ function validUrl(url: string): boolean {
 }
 
 export default function App() {
-  const { request, tabs, activeTabId, loading, setLoading, setResponse, setError, closeTab, createRequest, markSaved } = useRequestStore();
+  const { request, response, tabs, activeTabId, loading, setLoading, setResponse, setError, closeTab, createRequest, markSaved } = useRequestStore();
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
+  const [saveResponseOpen, setSaveResponseOpen] = useState(false);
+  const [saveResponseAfterRequest, setSaveResponseAfterRequest] = useState(false);
   const [closeTabId, setCloseTabId] = useState<string | null>(null);
   const [closeAfterSave, setCloseAfterSave] = useState<string | null>(null);
   const [workspaceView, setWorkspaceView] = useState<'api' | 'environment'>('api');
@@ -213,6 +216,18 @@ export default function App() {
     void saveExisting().catch((error) => showToast({ title: 'Could not save request', detail: String(error), tone: 'error' }));
   }, [saveExisting, showToast]);
 
+  const requestSaveResponse = useCallback(() => {
+    const state = useRequestStore.getState();
+    if (!state.response) return;
+    const tab = state.tabs.find((item) => item.id === state.activeTabId);
+    if (!tab?.origin) {
+      setSaveResponseAfterRequest(true);
+      setSaveOpen(true);
+      return;
+    }
+    setSaveResponseOpen(true);
+  }, []);
+
   const requestClose = useCallback((id: string) => {
     const tab = useRequestStore.getState().tabs.find((item) => item.id === id);
     if (!tab) return;
@@ -242,6 +257,9 @@ export default function App() {
   }, [activeTabId, hasActiveTab, loading, onSave, onSend, openNewRequest, requestClose, workspaceView]);
 
   const closingTab = tabs.find((tab) => tab.id === closeTabId);
+  const activeTab = tabs.find((tab) => tab.id === activeTabId);
+  const activeNode = activeTab?.origin ? useCollectionStore.getState().collectionsById[activeTab.origin.collectionId]?.nodesById[activeTab.origin.nodeId] : null;
+  const savedResponseNames = activeNode?.type === 'request' ? (activeNode.savedResponses ?? []).map((item) => item.name) : [];
 
   if (!workspace.current) {
     if (workspace.bootError) return <div className="shell workspace-loading"><section className="workspace-boot-error"><strong>Could not open TesAPI</strong><span>{workspace.bootError}</span><button onClick={() => window.location.reload()}>Retry</button></section></div>;
@@ -264,13 +282,13 @@ export default function App() {
       <main className={workspaceView === 'environment' ? 'main environment-main' : `main${hasActiveTab ? '' : ' empty-request-main'}`}>
         {workspaceView === 'environment' ? <EnvironmentEditor onToast={showToast} /> : hasActiveTab ? <>
           <RequestBuilder onSend={onSend} onCancel={onCancel} onToast={showToast} onSave={onSave} onCloseTab={requestClose} />
-          <ResponseViewer onRetry={onSend} />
+          <ResponseViewer onRetry={onSend} onSaveResponse={requestSaveResponse} />
         </> : <EmptyRequestState onNewRequest={openNewRequest} />}
       </main>
       <SaveRequestModal
         open={saveOpen}
         request={request}
-        onCancel={() => { setSaveOpen(false); setCloseAfterSave(null); if (saveForWorkspaceSwitch) { setSaveForWorkspaceSwitch(false); setSwitchTarget(null); } }}
+        onCancel={() => { setSaveOpen(false); setCloseAfterSave(null); setSaveResponseAfterRequest(false); if (saveForWorkspaceSwitch) { setSaveForWorkspaceSwitch(false); setSwitchTarget(null); } }}
         onError={(detail) => showToast({ title: 'Could not save request', detail, tone: 'error' })}
         onSaved={(origin, name) => {
           markSaved(origin, name);
@@ -282,6 +300,26 @@ export default function App() {
             setSaveForWorkspaceSwitch(false);
             window.queueMicrotask(() => { void saveAllForWorkspaceSwitch(); });
           }
+          if (saveResponseAfterRequest) {
+            setSaveResponseAfterRequest(false);
+            window.queueMicrotask(() => setSaveResponseOpen(true));
+          }
+        }}
+      />
+      <SaveResponseModal
+        open={saveResponseOpen}
+        requestName={activeTab?.draft.name ?? activeNode?.name ?? 'Untitled request'}
+        response={response}
+        existingNames={savedResponseNames}
+        onCancel={() => setSaveResponseOpen(false)}
+        onSave={async (name) => {
+          const state = useRequestStore.getState();
+          const tab = state.tabs.find((item) => item.id === state.activeTabId);
+          if (!tab?.origin || !state.response) throw new Error('The request or response is no longer available.');
+          await useCollectionStore.getState().loadCollection(tab.origin.collectionId);
+          await useCollectionStore.getState().saveResponse(tab.origin.collectionId, tab.origin.nodeId, name, state.response);
+          setSaveResponseOpen(false);
+          showToast({ title: 'Response saved', detail: `Added “${name}” below the request.` });
         }}
       />
       <CloseTabDialog

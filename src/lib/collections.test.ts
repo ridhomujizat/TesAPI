@@ -8,7 +8,7 @@ const request = (id: string): TesApiRequest => ({
 });
 const collection: Collection = {
   id: 'c', name: 'API', schemaVersion: 1, root: [{
-    id: 'folder', type: 'folder', name: 'Nested', children: [{ id: 'request', type: 'request', name: 'List', request: request('r') }],
+    id: 'folder', type: 'folder', name: 'Nested', children: [{ id: 'request', type: 'request', name: 'List', request: request('r'), savedResponses: [{ id: 'success', name: 'Success', response: { status: 200, statusText: 'OK', headers: {}, body: '{}', timeMs: 12, sizeBytes: 2 } }] }],
   }],
 };
 const normalized = normalizeCollection(collection);

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ClockAlert, Copy, RotateCw, SendHorizontal } from 'lucide-react';
+import { BookmarkPlus, ClockAlert, Copy, RotateCw, SendHorizontal } from 'lucide-react';
 import { CodeEditor } from '../CodeEditor';
 import { useRequestStore } from '../../store/requestStore';
 import { StatusBadge } from './StatusBadge';
@@ -8,7 +8,7 @@ import { formatBytes } from '../../lib/http';
 
 type Tab = 'body' | 'headers';
 
-export function ResponseViewer({ onRetry }: { onRetry: () => void }) {
+export function ResponseViewer({ onRetry, onSaveResponse }: { onRetry: () => void; onSaveResponse: () => void }) {
   const { response, error, loading } = useRequestStore();
   const [tab, setTab] = useState<Tab>('body');
   const [raw, setRaw] = useState(false);
@@ -88,6 +88,7 @@ export function ResponseViewer({ onRetry }: { onRetry: () => void }) {
               <Copy size={13} /> Copy
             </button>
           )}
+          <button className="save-response-button" onClick={onSaveResponse} title="Save this response below the request"><BookmarkPlus size={13} /> Save response</button>
         </div>
       </div>
 

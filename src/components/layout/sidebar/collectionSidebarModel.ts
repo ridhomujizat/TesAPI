@@ -1,14 +1,17 @@
-import type { CollectionSummary } from '../../../types';
+import type { CollectionSummary, SavedResponse } from '../../../types';
 import type { FlatNode } from '../../../lib/collections';
+
+type RequestNode = Extract<FlatNode, { type: 'request' }>;
 
 export type CollectionRow =
   | { key: string; type: 'collection'; collection: CollectionSummary; depth: number }
-  | { key: string; type: 'folder' | 'request'; collectionId: string; node: FlatNode; depth: number };
+  | { key: string; type: 'folder' | 'request'; collectionId: string; node: FlatNode; depth: number }
+  | { key: string; type: 'response'; collectionId: string; node: RequestNode; response: SavedResponse; depth: number };
 export type DropMode = 'before' | 'inside' | 'after';
-export interface ContextState { x: number; y: number; collectionId: string; nodeId?: string; type: 'empty' | 'collection' | 'folder' | 'request' }
+export interface ContextState { x: number; y: number; collectionId: string; nodeId?: string; responseId?: string; type: 'empty' | 'collection' | 'folder' | 'request' | 'response' }
 export interface MoveState { sourceCollectionId: string; nodeId: string; location: string }
 export interface EditingState { collectionId: string; nodeId?: string; value: string }
-export interface DeleteState { collectionId: string; nodeId?: string; name: string; type: 'collection' | 'folder' | 'request' }
+export interface DeleteState { collectionId: string; nodeId?: string; responseId?: string; name: string; type: 'collection' | 'folder' | 'request' | 'response' }
 export interface DragState { collectionId: string; nodeId: string }
 export interface DropState { key: string; mode: DropMode }
 export interface MoveLocation { value: string; label: string; collectionId: string; parentId: string | null }
@@ -36,6 +39,9 @@ export function buildRows(state: CollectionState, query: string): CollectionRow[
     if (!node) return;
     result.push({ key: `${collectionId}:${node.id}`, type: node.type, collectionId, node, depth });
     if (node.type === 'folder' && state.expandedIds[node.id]) for (const child of collection.childIdsByParent[node.id] ?? []) visit(collectionId, child, depth + 1);
+    if (node.type === 'request' && state.expandedIds[node.id]) {
+      for (const response of node.savedResponses ?? []) result.push({ key: `${collectionId}:${node.id}:${response.id}`, type: 'response', collectionId, node, response, depth: depth + 1 });
+    }
   };
   for (const summary of state.summaries) {
     result.push({ key: summary.id, type: 'collection', collection: summary, depth: 0 });
