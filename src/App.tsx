@@ -8,6 +8,7 @@ import { ResponseViewer } from './components/response/ResponseViewer';
 import { SaveRequestModal } from './components/SaveRequestModal';
 import { CloseTabDialog } from './components/CloseTabDialog';
 import { CreateWorkspaceModal } from './components/workspace/CreateWorkspaceModal';
+import { ManageWorkspacesModal } from './components/workspace/ManageWorkspacesModal';
 import { WorkspaceSwitchDialog } from './components/workspace/WorkspaceSwitchDialog';
 import { WorkspaceConflictBanner } from './components/workspace/WorkspaceConflictBanner';
 import { GitConflictBanner } from './components/workspace/GitConflictBanner';
@@ -29,6 +30,7 @@ import { useWorkspaceCollaboration } from './hooks/useWorkspaceCollaboration';
 import type { HistoryEntry, SessionState, WorkspaceRecord } from './types';
 import { OPEN_VARIABLES_EVENT } from './components/VariablePopover';
 import { useGitStore } from './store/gitStore';
+import { setSetting } from './lib/registry';
 
 function validUrl(url: string): boolean {
   try {
@@ -47,6 +49,8 @@ export default function App() {
   const [closeAfterSave, setCloseAfterSave] = useState<string | null>(null);
   const [workspaceView, setWorkspaceView] = useState<'api' | 'environment'>('api');
   const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
+  const [manageWorkspacesOpen, setManageWorkspacesOpen] = useState(false);
+  const [manageWorkspaceId, setManageWorkspaceId] = useState<string>();
   const [switchTarget, setSwitchTarget] = useState<WorkspaceRecord | null>(null);
   const [switchSaving, setSwitchSaving] = useState(false);
   const [saveForWorkspaceSwitch, setSaveForWorkspaceSwitch] = useState(false);
@@ -246,7 +250,7 @@ export default function App() {
 
   return (
     <div className="shell">
-      <Sidebar currentWorkspace={workspace.current} workspaces={workspace.workspaces} onToast={showToast} onWorkspaceChange={setWorkspaceView} onCreateWorkspace={() => setCreateWorkspaceOpen(true)} onOpenWorkspace={requestWorkspaceSwitch} onOpenWorkspaceWindow={(target) => void workspace.openNewWindow(target).catch((error) => showToast({ title: 'Could not open workspace window', detail: String(error), tone: 'error' }))} onRenameWorkspace={(id, name) => {
+      <Sidebar currentWorkspace={workspace.current} workspaces={workspace.workspaces} onToast={showToast} onWorkspaceChange={setWorkspaceView} onCreateWorkspace={() => setCreateWorkspaceOpen(true)} onManageWorkspaces={(target) => { setManageWorkspaceId(target?.id ?? workspace.current?.id); setManageWorkspacesOpen(true); }} onOpenWorkspace={requestWorkspaceSwitch} onOpenWorkspaceWindow={(target) => void workspace.openNewWindow(target).catch((error) => showToast({ title: 'Could not open workspace window', detail: String(error), tone: 'error' }))} onRenameWorkspace={(id, name) => {
         if (storageProvider.isReadOnly()) {
           showToast({ title: 'Workspace is read-only', detail: 'Upgrade TesAPI before renaming this workspace.', tone: 'error' });
           return Promise.resolve();
@@ -298,6 +302,19 @@ export default function App() {
         }}
       />
       <CreateWorkspaceModal open={createWorkspaceOpen} onCancel={() => setCreateWorkspaceOpen(false)} onCreate={workspace.create} onCreated={(created) => { setCreateWorkspaceOpen(false); requestWorkspaceSwitch(created); }} />
+      <ManageWorkspacesModal
+        open={manageWorkspacesOpen}
+        currentId={workspace.current.id}
+        initialWorkspaceId={manageWorkspaceId}
+        workspaces={workspace.workspaces}
+        onClose={() => setManageWorkspacesOpen(false)}
+        onCreate={() => { setManageWorkspacesOpen(false); setCreateWorkspaceOpen(true); }}
+        onOpenHere={(target) => { setManageWorkspacesOpen(false); requestWorkspaceSwitch(target); }}
+        onOpenWindow={(target) => { setManageWorkspacesOpen(false); void workspace.openNewWindow(target).catch((error) => showToast({ title: 'Could not open workspace window', detail: String(error), tone: 'error' })); }}
+        onRename={workspace.rename}
+        onDelete={async (id) => { await workspace.remove(id); showToast({ title: 'Workspace removed', detail: 'Its files remain on disk.' }); }}
+        onAutoCommitChange={async (id, enabled) => { await setSetting(`workspace:${id}:autoCommitOnSave`, enabled); if (id === workspace.current?.id) storageProvider.enableGitSync(enabled); showToast({ title: enabled ? 'Auto-commit enabled' : 'Manual commits enabled' }); }}
+      />
       <WorkspaceSwitchDialog open={!!switchTarget && !saveForWorkspaceSwitch} workspaceName={switchTarget?.name ?? ''} saving={switchSaving} onCancel={() => setSwitchTarget(null)} onDiscard={() => { if (switchTarget) void performWorkspaceSwitch(switchTarget, true); }} onSaveAll={() => void saveAllForWorkspaceSwitch()} />
       <SecretReviewDialog review={collaboration.secretReview} busy={collaboration.secretReviewBusy} error={collaboration.secretReviewError} onComplete={(choice) => void collaboration.completeSecretReview(choice)} />
       <GitIdentityDialog open={collaboration.identityOpen} busy={collaboration.identityBusy} error={collaboration.identityError} onSave={(name, email) => void collaboration.saveIdentity(name, email)} />

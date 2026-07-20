@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { SessionState, WorkspaceRecord } from '../types';
-import { createWorkspace, listWorkspaces, openWorkspaceWindow, renameWorkspace, resolveBootWorkspace, type CreateWorkspaceInput } from '../lib/registry';
+import { createWorkspace, deleteWorkspace, listWorkspaces, openWorkspaceWindow, renameWorkspace, resolveBootWorkspace, type CreateWorkspaceInput } from '../lib/registry';
 import { loadWorkspace, type WorkspaceSyncState } from '../lib/workspaces/lifecycle';
 import { storageProvider } from '../lib/storage/localJson';
 import type { ToastMessage } from '../components/Toast';
@@ -64,6 +64,12 @@ export function useWorkspaceController(onToast: (message: ToastMessage) => void)
     if (current?.id === id) setCurrent(updated);
   }, [current?.id]);
 
+  const remove = useCallback(async (id: string) => {
+    if (current?.id === id) throw new Error('Switch to another workspace before removing this one.');
+    await deleteWorkspace(id);
+    setWorkspaces((rows) => rows.filter((row) => row.id !== id));
+  }, [current?.id]);
+
   const retrySync = useCallback(async () => {
     if (!current || current.syncType !== 'git') return;
     const result = await invoke<{ state: WorkspaceSyncState }>('git_pull_workspace', {
@@ -73,5 +79,5 @@ export function useWorkspaceController(onToast: (message: ToastMessage) => void)
     setSyncState(result.state);
   }, [current]);
 
-  return { current, workspaces, ready, bootError, syncState, retrySync, replace, create, rename, refresh, openNewWindow: openWorkspaceWindow };
+  return { current, workspaces, ready, bootError, syncState, retrySync, replace, create, rename, remove, refresh, openNewWindow: openWorkspaceWindow };
 }

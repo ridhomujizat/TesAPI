@@ -5,7 +5,7 @@ use std::{
 
 use rusqlite::Connection;
 
-use crate::db::{configure, migrate_json};
+use crate::db::{configure, delete_workspace, migrate_json};
 
 fn temp(name: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!(
@@ -63,4 +63,75 @@ fn two_connections_write_with_wal() {
         2
     );
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn deleting_workspace_only_removes_registry_data() {
+    let root = temp("delete-workspace");
+    let kept_path = root.join("kept");
+    let removed_path = root.join("removed");
+    fs::create_dir_all(&kept_path).unwrap();
+    fs::create_dir_all(&removed_path).unwrap();
+    fs::write(removed_path.join("request.json"), "{}").unwrap();
+    let mut connection = Connection::open_in_memory().unwrap();
+    configure(&connection).unwrap();
+    for (id, path) in [("kept", &kept_path), ("removed", &removed_path)] {
+        connection.execute("INSERT INTO workspaces (id,name,sync_type,root_path,created_at) VALUES (?1,?1,'local',?2,1)", (id, path.to_string_lossy())).unwrap();
+    }
+    connection
+        .execute(
+            "INSERT INTO settings VALUES ('workspace:removed:autoCommitOnSave','true')",
+            [],
+        )
+        .unwrap();
+    connection
+        .execute("INSERT INTO settings VALUES ('unrelated','true')", [])
+        .unwrap();
+
+    delete_workspace(&mut connection, "removed").unwrap();
+
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM workspaces WHERE id='removed'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM settings WHERE key LIKE 'workspace:removed:%'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM settings WHERE key='unrelated'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+        1
+    );
+    assert!(removed_path.join("request.json").exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn deleting_the_only_workspace_is_rejected() {
+    let mut connection = Connection::open_in_memory().unwrap();
+    configure(&connection).unwrap();
+    connection.execute("INSERT INTO workspaces (id,name,sync_type,root_path,created_at) VALUES ('only','Only','local','/tmp/only',1)", []).unwrap();
+
+    assert_eq!(
+        delete_workspace(&mut connection, "only").unwrap_err(),
+        "TesAPI needs at least one workspace."
+    );
 }

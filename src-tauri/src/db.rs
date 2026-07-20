@@ -167,3 +167,37 @@ pub(crate) fn map_workspace(row: &rusqlite::Row<'_>) -> rusqlite::Result<Workspa
         last_opened_at: row.get(7)?,
     })
 }
+
+pub(crate) fn delete_workspace(connection: &mut Connection, id: &str) -> Result<(), String> {
+    let transaction = connection
+        .transaction()
+        .map_err(|error| error.to_string())?;
+    let workspace_count = transaction
+        .query_row("SELECT COUNT(*) FROM workspaces", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .map_err(|error| error.to_string())?;
+    if workspace_count <= 1 {
+        return Err("TesAPI needs at least one workspace.".into());
+    }
+    let removed = transaction
+        .execute("DELETE FROM workspaces WHERE id=?1", [id])
+        .map_err(|error| error.to_string())?;
+    if removed == 0 {
+        return Err("Workspace not found.".into());
+    }
+    let setting_prefix = format!("workspace:{id}:");
+    transaction
+        .execute(
+            "DELETE FROM settings WHERE substr(key,1,length(?1))=?1",
+            [setting_prefix],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "DELETE FROM settings WHERE key='last_workspace_id' AND value=?1",
+            [serde_json::to_string(id).map_err(|error| error.to_string())?],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction.commit().map_err(|error| error.to_string())
+}

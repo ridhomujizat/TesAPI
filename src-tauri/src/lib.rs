@@ -45,6 +45,7 @@ pub fn run() {
             registry_commands::registry_touch_workspace,
             registry_commands::registry_create_workspace,
             registry_commands::registry_rename_workspace,
+            registry_commands::registry_delete_workspace,
             registry_commands::registry_default_workspace_path,
             windows::register_workspace_window,
             windows::set_workspace_window_title,

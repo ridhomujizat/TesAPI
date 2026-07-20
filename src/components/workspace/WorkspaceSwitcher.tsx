@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronsUpDown, ExternalLink, GitBranch, HardDrive, Plus, RefreshCw, Replace, SquarePen } from 'lucide-react';
+import { Check, ChevronsUpDown, ExternalLink, GitBranch, HardDrive, Plus, RefreshCw, Replace, Settings2, SquarePen } from 'lucide-react';
 import type { WorkspaceRecord } from '../../types';
 
 interface Props {
@@ -9,6 +9,7 @@ interface Props {
   onOpenHere: (workspace: WorkspaceRecord) => void;
   onOpenWindow: (workspace: WorkspaceRecord) => void;
   onRename: (id: string, name: string) => Promise<void>;
+  onManage: (workspace?: WorkspaceRecord) => void;
   onGitMenu?: () => void;
   gitDirtyCount?: number;
   gitBusy?: boolean;
@@ -18,7 +19,7 @@ interface Props {
 const colors = ['#6E9BFF', '#3FB68B', '#F0A030', '#B98AF0', '#4A9EDE', '#E5534B'];
 const avatarColor = (id: string) => colors[[...id].reduce((sum, char) => sum + char.charCodeAt(0), 0) % colors.length];
 
-export function WorkspaceSwitcher({ current, workspaces, onCreate, onOpenHere, onOpenWindow, onRename, onGitMenu, gitDirtyCount = 0, gitBusy = false, gitBranch }: Props) {
+export function WorkspaceSwitcher({ current, workspaces, onCreate, onOpenHere, onOpenWindow, onRename, onManage, onGitMenu, gitDirtyCount = 0, gitBusy = false, gitBranch }: Props) {
   const [open, setOpen] = useState(false);
   const [recentOpen, setRecentOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(() => Math.max(0, workspaces.findIndex((item) => item.id === current.id)));
@@ -86,9 +87,9 @@ export function WorkspaceSwitcher({ current, workspaces, onCreate, onOpenHere, o
           {isCurrent ? <Check className="workspace-current-check" size={14} /> : <span className="workspace-row-actions"><button title="Open in new window" onClick={() => { onOpenWindow(workspace); setOpen(false); }}><ExternalLink size={13} /></button><button title="Open in this window — replaces the current workspace" onClick={() => { onOpenHere(workspace); setOpen(false); }}><Replace size={13} /></button></span>}
         </div>;
       })}</div>
-      <div className="workspace-popover-footer"><button onClick={() => { setOpen(false); onCreate(); }}><Plus size={13} /> Create workspace</button><button disabled={!recents.length} onClick={() => setRecentOpen((value) => !value)}><RefreshCw size={13} /> Open recent</button></div>
+      <div className="workspace-popover-footer"><button onClick={() => { setOpen(false); onCreate(); }}><Plus size={13} /> Create workspace</button><button onClick={() => { setOpen(false); onManage(current); }}><Settings2 size={13} /> Manage workspaces…</button><button disabled={!recents.length} onClick={() => setRecentOpen((value) => !value)}><RefreshCw size={13} /> Open recent</button></div>
       {recentOpen && <div className="workspace-recent-list">{recents.map((workspace) => <button key={workspace.id} onClick={() => { onOpenHere(workspace); setOpen(false); }}><span>{workspace.name}</span><small>{workspace.syncType}</small></button>)}</div>}
     </div>}
-    {context && <div className="context-menu workspace-context-menu" style={{ left: context.x, top: context.y }}><button onClick={() => startRename(context.workspace)}><SquarePen size={12} /> Rename workspace</button></div>}
+    {context && <div className="context-menu workspace-context-menu" style={{ left: context.x, top: context.y }}><button onClick={() => startRename(context.workspace)}><SquarePen size={12} /> Rename workspace</button><button onClick={() => { onManage(context.workspace); setContext(null); setOpen(false); }}><Settings2 size={12} /> Workspace settings…</button></div>}
   </div>;
 }

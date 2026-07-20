@@ -66,8 +66,76 @@
 .create-workspace-modal > footer .modal-save { min-width: 150px; }
 .workspace-switch-dialog { width: min(430px, 100%); }
 
+.workspace-manage-backdrop { z-index: 50; background: rgb(8 9 10 / 72%); }
+.manage-workspaces-modal { display: flex; width: min(760px, 100%); height: min(570px, calc(100vh - 40px)); flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: 11px; background: var(--bg-panel); box-shadow: 0 28px 90px rgb(0 0 0 / 55%); animation: save-modal-in 150ms ease-out; }
+.manage-workspaces-modal > header { display: flex; min-height: 70px; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 1px solid var(--border); }
+.manage-workspaces-modal > header h2 { font-size: 16px; font-weight: 650; }
+.manage-workspaces-modal > header p { margin-top: 3px; color: var(--text-secondary); font-size: 11.5px; }
+.manage-workspaces-modal > header > button, .workspace-delete-dialog > header > button { display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid var(--border); border-radius: 7px; color: var(--text-secondary); }
+.manage-workspaces-modal > header > button:hover, .workspace-delete-dialog > header > button:hover { background: var(--bg-elevated); color: var(--text-primary); }
+.workspace-manager-body { display: grid; min-height: 0; flex: 1; grid-template-columns: 224px minmax(0, 1fr); }
+.workspace-manager-body > aside { display: flex; min-height: 0; flex-direction: column; padding: 10px 8px; border-right: 1px solid var(--border); background: color-mix(in srgb, var(--bg-app) 55%, var(--bg-panel)); }
+.workspace-manager-list { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 2px; overflow-y: auto; }
+.workspace-manager-list > button { display: flex; min-height: 46px; align-items: center; gap: 9px; padding: 0 8px; border-radius: 7px; color: var(--text-secondary); text-align: left; }
+.workspace-manager-list > button:hover { background: var(--bg-elevated); }
+.workspace-manager-list > button.selected { background: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated)); color: var(--text-primary); }
+.workspace-manager-list > button > span:nth-child(2) { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+.workspace-manager-list b { overflow: hidden; font-size: 11.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-manager-list small { overflow: hidden; color: var(--text-muted); font: 9.5px var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.workspace-manager-list i { padding: 2px 5px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); font-size: 8px; font-style: normal; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.workspace-manager-create { display: flex; min-height: 34px; align-items: center; gap: 7px; margin-top: 8px; padding: 0 9px; border-top: 1px solid var(--border); border-radius: 6px; color: var(--text-secondary); font-size: 11px; }
+.workspace-manager-create:hover { background: var(--bg-elevated); color: var(--text-primary); }
+.workspace-manager-body > main { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow-y: auto; padding: 22px 24px 18px; }
+.workspace-manager-identity { display: flex; align-items: center; gap: 11px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+.workspace-avatar.large { width: 36px; height: 36px; border-radius: 9px; font-size: 15px; }
+.workspace-manager-identity > div { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+.workspace-manager-identity strong { overflow: hidden; font-size: 14px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-manager-identity > div span { color: var(--text-muted); font-size: 10.5px; }
+.workspace-manager-switch { display: flex; height: 30px; align-items: center; gap: 6px; padding: 0 10px; border-radius: 7px; background: var(--accent); color: white; font-size: 10.5px; font-weight: 600; }
+.workspace-manager-fields { display: flex; flex-direction: column; gap: 14px; padding: 18px 0; }
+.workspace-manager-name, .workspace-manager-path { display: flex; height: 36px; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elevated); }
+.workspace-manager-name:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent); }
+.workspace-manager-name input { min-width: 0; flex: 1; padding: 0 10px; font-size: 12px; }
+.workspace-manager-name button { padding: 0 12px; border-left: 1px solid var(--border); color: var(--accent); font-size: 10.5px; font-weight: 600; }
+.workspace-manager-name button:hover:not(:disabled) { background: var(--bg-panel); }
+.workspace-manager-name button:disabled { cursor: default; color: var(--text-muted); opacity: .45; }
+.workspace-manager-card { display: flex; align-items: center; gap: 9px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: color-mix(in srgb, var(--bg-elevated) 65%, transparent); }
+.workspace-manager-card > span { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 7px; background: var(--bg-panel); color: var(--text-secondary); }
+.workspace-manager-card > div { display: flex; flex-direction: column; gap: 2px; }
+.workspace-manager-card b { font-size: 11.5px; font-weight: 600; }
+.workspace-manager-card small { color: var(--text-muted); font-size: 10px; }
+.workspace-manager-path code, .workspace-manager-readonly { min-width: 0; flex: 1; overflow: hidden; padding: 0 10px; color: var(--text-secondary); font: 10.5px var(--font-mono); line-height: 34px; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-manager-path button { display: grid; width: 36px; flex: 0 0 auto; place-items: center; border-left: 1px solid var(--border); color: var(--text-muted); }
+.workspace-manager-path button:hover { background: var(--bg-panel); color: var(--text-primary); }
+.workspace-manager-readonly { height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elevated); }
+.workspace-manager-setting { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 10px 1px; text-align: left; }
+.workspace-manager-setting > span { display: flex; flex-direction: column; gap: 2px; }
+.workspace-manager-setting b { font-size: 11.5px; font-weight: 600; }
+.workspace-manager-setting small { color: var(--text-muted); font-size: 10.5px; }
+.workspace-manager-setting > i { position: relative; width: 30px; height: 17px; flex: 0 0 auto; border-radius: 10px; background: var(--bg-elevated); box-shadow: inset 0 0 0 1px var(--border); }
+.workspace-manager-setting > i em { position: absolute; top: 3px; left: 3px; width: 11px; height: 11px; border-radius: 50%; background: var(--text-muted); transition: transform 120ms ease, background 120ms ease; }
+.workspace-manager-setting > i.enabled { background: color-mix(in srgb, var(--accent) 24%, var(--bg-elevated)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 50%, var(--border)); }
+.workspace-manager-setting > i.enabled em { background: var(--accent); transform: translateX(13px); }
+.workspace-manager-body > main > footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 15px; border-top: 1px solid var(--border); }
+.workspace-manager-open-window { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 10.5px; }
+.workspace-manager-open-window:hover { color: var(--text-primary); }
+.workspace-delete-backdrop { z-index: 60; }
+.workspace-delete-dialog { width: min(430px, 100%); overflow: hidden; border: 1px solid color-mix(in srgb, var(--method-delete) 32%, var(--border)); border-radius: 10px; background: var(--bg-panel); box-shadow: 0 24px 80px rgb(0 0 0 / 55%); }
+.workspace-delete-dialog > header { display: flex; align-items: flex-start; gap: 10px; padding: 18px; }
+.workspace-delete-dialog > header > span { display: grid; width: 32px; height: 32px; flex: 0 0 auto; place-items: center; border-radius: 8px; background: color-mix(in srgb, var(--method-delete) 12%, transparent); color: var(--method-delete); }
+.workspace-delete-dialog > header > div { min-width: 0; flex: 1; }
+.workspace-delete-dialog h2 { font-size: 14px; font-weight: 650; }
+.workspace-delete-dialog p { margin-top: 4px; color: var(--text-secondary); font-size: 11.5px; line-height: 1.45; }
+.workspace-delete-path { display: flex; flex-direction: column; gap: 5px; margin: 0 18px 18px; padding: 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-app); }
+.workspace-delete-path span { color: var(--text-muted); font-size: 9.5px; }
+.workspace-delete-path code { overflow: hidden; color: var(--text-secondary); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-delete-dialog > footer { display: flex; justify-content: flex-end; gap: 8px; padding: 13px 18px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--bg-elevated) 38%, var(--bg-panel)); }
+
 @media (max-width: 720px) {
   .workspace-sync-cards { grid-template-columns: 1fr; }
   .workspace-sync-cards > button { min-height: 70px; }
   .workspace-git-row { grid-template-columns: 1fr; }
+  .manage-workspaces-modal { height: calc(100vh - 24px); }
+  .workspace-manager-body { grid-template-columns: 160px minmax(0, 1fr); }
+  .workspace-manager-body > main { padding: 18px 16px; }
 }

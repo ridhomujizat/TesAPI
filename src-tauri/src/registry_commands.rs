@@ -5,7 +5,7 @@ use serde::Deserialize;
 use tauri::{AppHandle, Manager, State};
 
 use crate::{
-    db::{map_workspace, new_id, now, RegistryState, WorkspaceRecord},
+    db::{delete_workspace, map_workspace, new_id, now, RegistryState, WorkspaceRecord},
     workspace::{self, WorkspaceFile},
     workspace_io::WorkspaceQueueState,
 };
@@ -199,6 +199,15 @@ pub fn registry_rename_workspace(
         )
         .map_err(|error| error.to_string())?;
     Ok(record)
+}
+
+#[tauri::command]
+pub fn registry_delete_workspace(
+    id: String,
+    state: State<'_, RegistryState>,
+) -> Result<(), String> {
+    let mut connection = connection(&state)?;
+    delete_workspace(&mut connection, &id)
 }
 
 #[tauri::command]

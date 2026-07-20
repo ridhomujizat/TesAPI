@@ -20,9 +20,10 @@ interface Props {
   onOpenWorkspace: (workspace: WorkspaceRecord) => void;
   onOpenWorkspaceWindow: (workspace: WorkspaceRecord) => void;
   onRenameWorkspace: (id: string, name: string) => Promise<void>;
+  onManageWorkspaces: (workspace?: WorkspaceRecord) => void;
 }
 
-export function Sidebar({ currentWorkspace, workspaces, onToast, onWorkspaceChange, onCreateWorkspace, onOpenWorkspace, onOpenWorkspaceWindow, onRenameWorkspace }: Props) {
+export function Sidebar({ currentWorkspace, workspaces, onToast, onWorkspaceChange, onCreateWorkspace, onOpenWorkspace, onOpenWorkspaceWindow, onRenameWorkspace, onManageWorkspaces }: Props) {
   const [view, setView] = useState<SidebarView>('collections');
   const [gitMenuOpen, setGitMenuOpen] = useState(false);
   const git = useGitStore();
@@ -35,7 +36,7 @@ export function Sidebar({ currentWorkspace, workspaces, onToast, onWorkspaceChan
   };
 
   return <aside className="sidebar" onContextMenu={(event) => event.preventDefault()}>
-    <WorkspaceSwitcher current={currentWorkspace} workspaces={workspaces} onCreate={onCreateWorkspace} onOpenHere={onOpenWorkspace} onOpenWindow={onOpenWorkspaceWindow} onRename={onRenameWorkspace} onGitMenu={toggleGitMenu} gitDirtyCount={git.entities.length} gitBusy={!!git.inFlight} gitBranch={git.status?.branch} />
+    <WorkspaceSwitcher current={currentWorkspace} workspaces={workspaces} onCreate={onCreateWorkspace} onOpenHere={onOpenWorkspace} onOpenWindow={onOpenWorkspaceWindow} onRename={onRenameWorkspace} onManage={onManageWorkspaces} onGitMenu={toggleGitMenu} gitDirtyCount={git.entities.length} gitBusy={!!git.inFlight} gitBranch={git.status?.branch} />
     {currentWorkspace.syncType === 'git' && <GitMenu open={gitMenuOpen} onClose={closeGitMenu} workspace={currentWorkspace} onToast={onToast} />}
     {view === 'collections' && <CollectionsSidebar onToast={onToast} onViewChange={changeView} onWorkspaceChange={onWorkspaceChange} />}
     {view === 'history' && <HistorySidebar onToast={onToast} onViewChange={changeView} />}

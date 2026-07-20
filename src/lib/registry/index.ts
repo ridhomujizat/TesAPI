@@ -13,6 +13,7 @@ export const listWorkspaces = () => invoke<WorkspaceRecord[]>('registry_list_wor
 export const getWorkspace = (id: string) => invoke<WorkspaceRecord | null>('registry_get_workspace', { id });
 export const createWorkspace = (input: CreateWorkspaceInput) => invoke<WorkspaceRecord>('registry_create_workspace', { input });
 export const renameWorkspace = (id: string, name: string) => invoke<WorkspaceRecord>('registry_rename_workspace', { id, name });
+export const deleteWorkspace = (id: string) => invoke<void>('registry_delete_workspace', { id });
 export const touchLastOpened = (id: string) => invoke<void>('registry_touch_workspace', { id });
 export const defaultWorkspacePath = (slug: string) => invoke<string>('registry_default_workspace_path', { slug });
 
