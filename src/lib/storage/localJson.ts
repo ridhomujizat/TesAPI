@@ -1,123 +1,97 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Collection, CollectionSummary, EnvironmentsFile, HistoryEntry, HistoryQuery, SessionState, WorkspaceMeta, WorkspaceRecord } from '../../types';
-import { countNodes } from '../collections';
-import { migrate } from './migrate';
-import { collectionPath, collectionsPath, environmentsPath, historyPath, sessionPath, workspacePath } from './paths';
+import type {
+  Collection,
+  CollectionSummary,
+  EnvironmentsFile,
+  HistoryEntry,
+  HistoryQuery,
+  SessionState,
+  StorageConflict,
+  WorkspaceMeta,
+  WorkspaceRecord,
+} from '../../types';
+import { CollectionFiles } from './collectionFiles';
+import { EnvironmentFiles, type SecretReviewState } from './environmentFiles';
+import { historyPath, isSidecarPath } from './paths';
 import type { StorageProvider } from './provider';
+import { WorkspaceFileClient, WorkspaceWriteConflict } from './workspaceFileClient';
 
 const HISTORY_LIMIT = 1000;
 const warningListeners = new Set<(message: string) => void>();
+const conflictListeners = new Set<(conflict: StorageConflict) => void>();
 
 export const onStorageWarning = (listener: (message: string) => void) => {
   warningListeners.add(listener);
   return () => { warningListeners.delete(listener); };
 };
 
+export const onStorageConflict = (listener: (conflict: StorageConflict) => void) => {
+  conflictListeners.add(listener);
+  return () => { conflictListeners.delete(listener); };
+};
+
 const warn = (message: string) => warningListeners.forEach((listener) => listener(message));
-
-function stable(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stable);
-  if (!value || typeof value !== 'object') return value;
-  return Object.fromEntries(Object.keys(value as Record<string, unknown>).sort().map((key) => [key, stable((value as Record<string, unknown>)[key])]));
-}
-
-export const stableStringify = (value: unknown) => `${JSON.stringify(stable(value), null, 2)}\n`;
-
-interface RecoveryResult { quarantinedPath: string; backup?: string }
-interface CollectionSummaryRecord { fileName: string; summary: CollectionSummary | null }
+export { stableStringify } from './serialization';
 
 export class LocalJsonProvider implements StorageProvider {
-  private workspace: WorkspaceRecord | null = null;
+  private readonly files = new WorkspaceFileClient(warn);
+  private readonly collections = new CollectionFiles(this.files);
+  private readonly environments = new EnvironmentFiles(this.files);
 
-  configure(workspace: WorkspaceRecord): void { this.workspace = workspace; }
-  currentWorkspace(): WorkspaceRecord | null { return this.workspace; }
-
-  private root(): string {
-    if (!this.workspace) throw new Error('Workspace storage is not configured.');
-    return this.workspace.rootPath;
-  }
-
-  private async read<T>(path: string): Promise<T | null> {
-    const contents = await invoke<string | null>('read_json', { path });
-    if (contents == null) return null;
-    try {
-      return JSON.parse(contents) as T;
-    } catch {
-      const recovered = await invoke<RecoveryResult>('quarantine_file', { path });
-      warn(`Recovered corrupt storage file: ${path}`);
-      if (!recovered.backup) return null;
-      const parsed = JSON.parse(recovered.backup) as T;
-      await invoke('atomic_write_json', { path, contents: stableStringify(parsed) });
-      return parsed;
-    }
-  }
-
-  private async write(path: string, value: unknown, gitRelativePath?: string): Promise<void> {
-    await invoke('atomic_write_json', { path, contents: stableStringify(value) });
-    if (gitRelativePath && this.workspace?.syncType === 'git') {
-      void invoke<boolean>('git_commit_workspace_file', { rootPath: this.root(), relativePath: gitRelativePath })
-        .catch((error) => warn(`Saved locally, but Git sync failed: ${String(error)}`));
-    }
-  }
+  configure(workspace: WorkspaceRecord): void { this.files.configure(workspace); }
+  currentWorkspace(): WorkspaceRecord | null { return this.files.currentWorkspace(); }
+  isReadOnly(): boolean { return this.files.isReadOnly(); }
+  readOnlyReason(): string | null { return this.files.readOnlyReason(); }
+  inspectCompatibility(): Promise<void> { return this.detectForwardCompatibility(); }
+  enableGitSync(): void { this.files.enableGitSync(); }
 
   async initialize(): Promise<WorkspaceMeta> {
-    const workspace = this.workspace;
-    if (!workspace) throw new Error('Workspace storage is not configured.');
-    await invoke('ensure_dirs', { paths: [workspace.rootPath, collectionsPath(workspace.rootPath)] });
-    if (!await this.read(workspacePath(workspace.rootPath))) {
-      await this.write(workspacePath(workspace.rootPath), { schemaVersion: 1, id: workspace.id, name: workspace.name, syncType: workspace.syncType, gitRemote: workspace.gitRemote, gitBranch: workspace.gitBranch });
+    const workspace = this.requiredWorkspace();
+    await this.detectForwardCompatibility();
+    if (this.files.isReadOnly()) return this.loadWorkspaceMeta();
+    await invoke('ensure_dirs', { paths: [workspace.rootPath, `${workspace.rootPath}/collections`] });
+    if (workspace.syncType === 'git') await invoke('prepare_workspace_gitignore', { rootPath: workspace.rootPath });
+    if (!await this.files.readJson('workspace.json')) {
+      await this.files.writeJson('workspace.json', {
+        schemaVersion: 1,
+        id: workspace.id,
+        name: workspace.name,
+        syncType: workspace.syncType,
+        gitRemote: workspace.gitRemote,
+        gitBranch: workspace.gitBranch,
+      });
     }
-    if (!await this.read<EnvironmentsFile>(environmentsPath(workspace.rootPath))) {
-      await this.write(environmentsPath(workspace.rootPath), { schemaVersion: 1, activeEnvironmentId: null, environments: [] });
-    }
+    await this.runWrite(async () => this.environments.save(await this.environments.load()));
     return this.loadWorkspaceMeta();
   }
 
   async loadWorkspaceMeta(): Promise<WorkspaceMeta> {
-    const workspace = this.workspace;
-    if (!workspace) throw new Error('Workspace storage is not configured.');
-    return { schemaVersion: 1, activeWorkspaceId: workspace.id, workspaces: [{ id: workspace.id, name: workspace.name, storage: { type: workspace.syncType, rootPath: workspace.rootPath, git: { enabled: workspace.syncType === 'git' } } }] };
+    const workspace = this.requiredWorkspace();
+    return {
+      schemaVersion: 1,
+      activeWorkspaceId: workspace.id,
+      workspaces: [{
+        id: workspace.id,
+        name: workspace.name,
+        storage: { type: workspace.syncType, rootPath: workspace.rootPath, git: { enabled: workspace.syncType === 'git' } },
+      }],
+    };
   }
 
-  async listCollections(): Promise<CollectionSummary[]> {
-    const root = this.root();
-    const records = await invoke<CollectionSummaryRecord[]>('list_collection_summaries', { path: collectionsPath(root) });
-    const summaries: CollectionSummary[] = [];
-    for (const record of records) {
-      if (record.summary) { summaries.push(record.summary); continue; }
-      const collection = await this.read<Collection>(`${collectionsPath(root)}/${record.fileName}`);
-      if (collection) summaries.push({ id: collection.id, name: collection.name, ...countNodes(collection) });
-    }
-    return summaries.sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  async loadCollection(id: string): Promise<Collection> {
-    const collection = await this.read<Collection>(collectionPath(this.root(), id));
-    if (!collection) throw new Error(`Collection not found: ${id}`);
-    return migrate(collection);
-  }
-
-  async saveCollection(collection: Collection): Promise<void> {
-    await this.write(collectionPath(this.root(), collection.id), migrate(collection), `collections/${collection.id}.json`);
-  }
-
-  async deleteCollection(id: string): Promise<void> {
-    await invoke('delete_file', { path: collectionPath(this.root(), id) });
-    if (this.workspace?.syncType === 'git') {
-      void invoke<boolean>('git_commit_workspace_file', { rootPath: this.root(), relativePath: `collections/${id}.json` })
-        .catch((error) => warn(`Deleted locally, but Git sync failed: ${String(error)}`));
-    }
-  }
+  listCollections(): Promise<CollectionSummary[]> { return this.collections.list(); }
+  loadCollection(id: string): Promise<Collection> { return this.collections.load(id); }
+  saveCollection(collection: Collection): Promise<void> { return this.runWrite(() => this.collections.save(collection)); }
+  deleteCollection(id: string): Promise<void> { return this.runWrite(() => this.collections.delete(id)); }
 
   async appendHistory(entry: HistoryEntry): Promise<void> {
-    const path = historyPath(this.root());
-    await invoke('append_line', { path, line: JSON.stringify(entry) });
+    const path = historyPath(this.files.rootPath());
+    await this.files.appendLine('history.ndjson', JSON.stringify(entry));
     const lines = await invoke<string[]>('read_last_lines', { path, count: HISTORY_LIMIT + 1 });
-    if (lines.length > HISTORY_LIMIT) await invoke('atomic_write_json', { path, contents: `${lines.slice(-HISTORY_LIMIT).join('\n')}\n` });
+    if (lines.length > HISTORY_LIMIT) await this.files.writeText('history.ndjson', `${lines.slice(-HISTORY_LIMIT).join('\n')}\n`);
   }
 
   async queryHistory(query: HistoryQuery): Promise<HistoryEntry[]> {
-    const lines = await invoke<string[]>('read_last_lines', { path: historyPath(this.root()), count: query.limit ?? HISTORY_LIMIT });
+    const lines = await invoke<string[]>('read_last_lines', { path: historyPath(this.files.rootPath()), count: query.limit ?? HISTORY_LIMIT });
     const search = query.search?.toLowerCase() ?? '';
     return lines.reverse().flatMap((line) => { try { return [JSON.parse(line) as HistoryEntry]; } catch { return []; } }).filter((entry) => {
       if (search && !entry.url.toLowerCase().includes(search)) return false;
@@ -128,19 +102,68 @@ export class LocalJsonProvider implements StorageProvider {
   }
 
   async clearHistory(): Promise<void> {
-    const path = historyPath(this.root());
-    await Promise.all([invoke('delete_file', { path }), invoke('delete_file', { path: `${path}.bak` })]);
+    await Promise.all([this.files.deleteFile('history.ndjson'), this.files.deleteFile('history.ndjson.bak')]);
   }
 
-  async loadSession(): Promise<SessionState | null> { return this.read<SessionState>(sessionPath(this.root())); }
-  async saveSession(session: SessionState): Promise<void> { await this.write(sessionPath(this.root()), session); }
+  loadSession(): Promise<SessionState | null> { return this.files.readJson<SessionState>('session.json'); }
+  saveSession(session: SessionState): Promise<void> { return this.runWrite(() => this.files.writeJson('session.json', session).then(() => undefined)); }
+  loadEnvironments(): Promise<EnvironmentsFile> { return this.environments.load(); }
+  saveEnvironments(file: EnvironmentsFile): Promise<void> { return this.runWrite(() => this.environments.save(file)); }
 
-  async loadEnvironments(): Promise<EnvironmentsFile> {
-    return migrate(await this.read<EnvironmentsFile>(environmentsPath(this.root())) ?? { schemaVersion: 1, activeEnvironmentId: null, environments: [] });
+  secretReview(): Promise<SecretReviewState | null> { return this.environments.reviewState(); }
+  completeSecretReview(choice: 'rotated' | 'purged'): Promise<void> { return this.environments.completeReview(choice); }
+  flush(): Promise<void> { return this.files.flush(); }
+  externalChanges(paths: string[]): Promise<string[]> { return this.files.externalChanges(paths); }
+  acceptExternal(path: string): Promise<void> { return this.files.acceptExternal(path); }
+
+  private requiredWorkspace(): WorkspaceRecord {
+    const workspace = this.files.currentWorkspace();
+    if (!workspace) throw new Error('Workspace storage is not configured.');
+    return workspace;
   }
 
-  async saveEnvironments(environments: EnvironmentsFile): Promise<void> {
-    await this.write(environmentsPath(this.root()), migrate(environments), 'environments.json');
+  private async detectForwardCompatibility(): Promise<void> {
+    const descriptor = await this.files.inspectJson<{ schemaVersion?: number }>('workspace.json');
+    this.files.guardSchema('workspace.json', descriptor?.schemaVersion, 1);
+    const environments = await this.files.inspectJson<{ schemaVersion?: number }>('environments.json');
+    this.files.guardSchema('environments.json', environments?.schemaVersion, 2);
+    const local = await this.files.inspectJson<{ schemaVersion?: number }>('environments.local.json');
+    this.files.guardSchema('environments.local.json', local?.schemaVersion, 1);
+    const session = await this.files.inspectJson<{ schemaVersion?: number }>('session.json');
+    this.files.guardSchema('session.json', session?.schemaVersion, 1);
+    for (const entry of await this.files.list('collections')) {
+      if (entry.endsWith('.json')) {
+        const value = await this.files.inspectJson<{ schemaVersion?: number }>(`collections/${entry}`);
+        this.files.guardSchema(`collections/${entry}`, value?.schemaVersion, 1);
+        continue;
+      }
+      for (const file of ['collection.json', 'tree.json']) {
+        const path = `collections/${entry}/${file}`;
+        const value = await this.files.inspectJson<{ schemaVersion?: number }>(path);
+        this.files.guardSchema(path, value?.schemaVersion, 2);
+      }
+      for (const request of await this.files.list(`collections/${entry}/requests`)) {
+        if (!request.endsWith('.json') || isSidecarPath(request)) continue;
+        const path = `collections/${entry}/requests/${request}`;
+        const value = await this.files.inspectJson<{ schemaVersion?: number }>(path);
+        this.files.guardSchema(path, value?.schemaVersion, 2);
+      }
+    }
+  }
+
+  private async runWrite<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (error instanceof WorkspaceWriteConflict) {
+        conflictListeners.forEach((listener) => listener({
+          path: error.path,
+          detail: 'This file changed outside TesAPI after it was loaded.',
+          keepMine: error.retry,
+        }));
+      }
+      throw error;
+    }
   }
 }
 

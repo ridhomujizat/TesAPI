@@ -6,6 +6,7 @@ export interface KeyValue {
   description?: string;
   valueType?: 'text' | 'file';
   files?: UploadFile[];
+  secret?: boolean;
 }
 
 export interface UploadFile {
@@ -102,6 +103,12 @@ export interface Collection {
   name: string;
   schemaVersion: number;
   root: TreeNode[];
+}
+
+export interface StorageConflict {
+  path: string;
+  detail: string;
+  keepMine: () => Promise<void>;
 }
 
 export interface HistoryEntry {

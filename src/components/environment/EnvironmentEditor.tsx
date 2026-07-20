@@ -36,7 +36,7 @@ export function EnvironmentEditor({ onToast }: { onToast: (message: ToastMessage
       </div>
       <div className="tabs environment-tabs"><button className="tab active">Variables<span className="count"> · {variableCount}</span></button></div>
       <div className="pane-body environment-pane">
-        {selected ? <KeyValueEditor rows={selected.variables} onChange={(variables) => void setVariables(selected.id, variables)} /> : <div className="environment-empty"><Layers3 size={22} /><strong>Select an environment</strong><span>Choose one from the sidebar to edit its variables.</span></div>}
+        {selected ? <KeyValueEditor rows={selected.variables} showSecret onChange={(variables) => void setVariables(selected.id, variables)} /> : <div className="environment-empty"><Layers3 size={22} /><strong>Select an environment</strong><span>Choose one from the sidebar to edit its variables.</span></div>}
       </div>
     </section>
   );

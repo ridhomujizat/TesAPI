@@ -6,7 +6,9 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::{
     db::{map_workspace, new_id, now, RegistryState, WorkspaceRecord},
+    git_sync,
     workspace::{self, WorkspaceFile},
+    workspace_io::WorkspaceQueueState,
 };
 
 #[derive(Deserialize)]
@@ -88,6 +90,7 @@ pub fn registry_touch_workspace(id: String, state: State<'_, RegistryState>) -> 
 pub fn registry_create_workspace(
     input: CreateWorkspaceInput,
     state: State<'_, RegistryState>,
+    queue: State<'_, WorkspaceQueueState>,
 ) -> Result<WorkspaceRecord, String> {
     let name = input.name.trim();
     if name.is_empty() {
@@ -100,6 +103,10 @@ pub fn registry_create_workspace(
     if root.as_os_str().is_empty() {
         return Err("Workspace location is required.".into());
     }
+    let workspace_lock = queue.lock_for(&root)?;
+    let _workspace_guard = workspace_lock
+        .lock()
+        .map_err(|_| "Workspace queue lock poisoned".to_string())?;
     let descriptor = workspace::create_folder(
         WorkspaceFile {
             schema_version: 1,
@@ -158,6 +165,7 @@ pub fn registry_rename_workspace(
     id: String,
     name: String,
     state: State<'_, RegistryState>,
+    queue: State<'_, WorkspaceQueueState>,
 ) -> Result<WorkspaceRecord, String> {
     let connection = connection(&state)?;
     let mut record = connection.query_row("SELECT id,name,sync_type,root_path,git_remote,git_branch,created_at,last_opened_at FROM workspaces WHERE id=?1", [&id], map_workspace).map_err(|error| error.to_string())?;
@@ -166,8 +174,16 @@ pub fn registry_rename_workspace(
         return Err("Workspace name is required.".into());
     }
     record.name = next.into();
+    let root = Path::new(&record.root_path);
+    if workspace::read_descriptor(root)?.schema_version > 1 {
+        return Err("Workspace uses a newer schema. Upgrade TesAPI before renaming it.".into());
+    }
+    let workspace_lock = queue.lock_for(root)?;
+    let _workspace_guard = workspace_lock
+        .lock()
+        .map_err(|_| "Workspace queue lock poisoned".to_string())?;
     workspace::write_descriptor(
-        Path::new(&record.root_path),
+        root,
         &WorkspaceFile {
             schema_version: 1,
             id: record.id.clone(),
@@ -177,6 +193,10 @@ pub fn registry_rename_workspace(
             git_branch: record.git_branch.clone(),
         },
     )?;
+    if record.sync_type == "git" {
+        let repo = git2::Repository::open(root).map_err(|error| error.message().to_owned())?;
+        git_sync::commit_relative_paths(&repo, &["workspace.json".into()])?;
+    }
     connection
         .execute(
             "UPDATE workspaces SET name=?1 WHERE id=?2",

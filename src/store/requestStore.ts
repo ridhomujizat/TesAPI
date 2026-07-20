@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { TesApiRequest, TesApiResponse, KeyValue, Method, RequestOrigin, RequestTab, SessionState } from '../types/index.ts';
-import { normalizeForCompare } from '../lib/collections.ts';
+import { isTabDirty, normalizeForCompare } from '../lib/collections.ts';
 import { buildUrl, emptyRow, parseParams, withTrailingBlank } from '../lib/params.ts';
 import { uid } from '../lib/id.ts';
 
@@ -51,6 +51,8 @@ interface State {
   closeSavedTabs: (collectionId: string, nodeIds?: string[]) => void;
   markSaved: (origin: RequestOrigin, name: string) => void;
   restoreSession: (session: SessionState) => void;
+  refreshSavedRequest: (origin: RequestOrigin, request: TesApiRequest, name: string) => void;
+  reloadSavedRequest: (origin: RequestOrigin, request: TesApiRequest, name: string) => void;
   reset: () => void;
 }
 
@@ -147,5 +149,23 @@ export const useRequestStore = create<State>((set, get) => ({
     const active = tabs.find((tab) => tab.id === session.activeTabId) ?? tabs[0];
     set({ tabs, activeTabId: active?.id ?? '', request: active?.draft ?? newRequest(), response: null, error: null, loading: false });
   },
+  refreshSavedRequest: (origin, request, name) => set((state) => {
+    const tabs = state.tabs.map((tab) => {
+      if (tab.origin?.collectionId !== origin.collectionId || tab.origin.nodeId !== origin.nodeId || isTabDirty(tab)) return tab;
+      const draft = { ...request, name };
+      return { ...tab, draft, savedSnapshot: normalizeForCompare(draft) };
+    });
+    const active = tabs.find((tab) => tab.id === state.activeTabId);
+    return active ? { tabs, request: active.draft } : { tabs };
+  }),
+  reloadSavedRequest: (origin, request, name) => set((state) => {
+    const tabs = state.tabs.map((tab) => {
+      if (tab.origin?.collectionId !== origin.collectionId || tab.origin.nodeId !== origin.nodeId) return tab;
+      const draft = { ...request, name };
+      return { ...tab, draft, savedSnapshot: normalizeForCompare(draft) };
+    });
+    const active = tabs.find((tab) => tab.id === state.activeTabId);
+    return active ? { tabs, request: active.draft } : { tabs };
+  }),
   reset: () => set({ tabs: [], activeTabId: '', request: newRequest(), response: null, error: null, loading: false }),
 }));

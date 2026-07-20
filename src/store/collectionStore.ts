@@ -11,6 +11,7 @@ interface State {
   expandedIds: Record<string, boolean>;
   initialize: () => Promise<void>;
   loadCollection: (id: string) => Promise<void>;
+  reloadCollection: (id: string) => Promise<void>;
   loadAll: () => Promise<void>;
   setExpanded: (id: string, expanded: boolean) => void;
   createCollection: (name: string) => Promise<string>;
@@ -72,6 +73,10 @@ export const useCollectionStore = create<State>((set, get) => ({
   },
   loadCollection: async (id) => {
     if (get().collectionsById[id]) return;
+    const normalized = normalizeCollection(await storageProvider.loadCollection(id));
+    set((state) => ({ collectionsById: { ...state.collectionsById, [id]: normalized } }));
+  },
+  reloadCollection: async (id) => {
     const normalized = normalizeCollection(await storageProvider.loadCollection(id));
     set((state) => ({ collectionsById: { ...state.collectionsById, [id]: normalized } }));
   },

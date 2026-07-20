@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import type { SessionState, WorkspaceRecord } from '../types';
 import { createWorkspace, listWorkspaces, openWorkspaceWindow, renameWorkspace, resolveBootWorkspace, type CreateWorkspaceInput } from '../lib/registry';
-import { loadWorkspace } from '../lib/workspaces/lifecycle';
+import { loadWorkspace, type WorkspaceSyncState } from '../lib/workspaces/lifecycle';
 import { storageProvider } from '../lib/storage/localJson';
 import type { ToastMessage } from '../components/Toast';
 
@@ -9,18 +10,26 @@ export function useWorkspaceController(onToast: (message: ToastMessage) => void)
   const [current, setCurrent] = useState<WorkspaceRecord | null>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceRecord[]>([]);
   const [ready, setReady] = useState(false);
+  const [syncState, setSyncState] = useState<WorkspaceSyncState>('idle');
+  const [bootError, setBootError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void resolveBootWorkspace().then(async ({ current: workspace, workspaces: rows }) => {
-      const warning = await loadWorkspace(workspace);
+      const result = await loadWorkspace(workspace);
       if (cancelled) return;
+      setBootError(null);
       setCurrent(workspace);
       setWorkspaces(rows);
+      setSyncState(result.syncState);
       setReady(true);
-      if (warning) onToast({ title: 'Workspace opened with a Git warning', detail: warning, tone: 'error' });
+      if (result.warning) onToast({ title: 'Workspace opened with a Git warning', detail: result.warning, tone: 'error' });
     }).catch((error) => {
-      if (!cancelled) onToast({ title: 'Workspace unavailable', detail: String(error), tone: 'error' });
+      if (!cancelled) {
+        setBootError(String(error));
+        setReady(true);
+        onToast({ title: 'Workspace unavailable', detail: String(error), tone: 'error' });
+      }
     });
     return () => { cancelled = true; };
   }, [onToast]);
@@ -31,11 +40,13 @@ export function useWorkspaceController(onToast: (message: ToastMessage) => void)
     if (workspace.id === current?.id) return;
     setReady(false);
     try {
-      await storageProvider.saveSession(session);
-      const warning = await loadWorkspace(workspace);
+      if (!storageProvider.isReadOnly()) await storageProvider.saveSession(session);
+      await storageProvider.flush();
+      const result = await loadWorkspace(workspace);
       setCurrent(workspace);
+      setSyncState(result.syncState);
       await refresh();
-      if (warning) onToast({ title: 'Workspace opened with a Git warning', detail: warning, tone: 'error' });
+      if (result.warning) onToast({ title: 'Workspace opened with a Git warning', detail: result.warning, tone: 'error' });
     } finally {
       setReady(true);
     }
@@ -53,5 +64,14 @@ export function useWorkspaceController(onToast: (message: ToastMessage) => void)
     if (current?.id === id) setCurrent(updated);
   }, [current?.id]);
 
-  return { current, workspaces, ready, replace, create, rename, refresh, openNewWindow: openWorkspaceWindow };
+  const retrySync = useCallback(async () => {
+    if (!current || current.syncType !== 'git') return;
+    const result = await invoke<{ state: WorkspaceSyncState }>('git_pull_workspace', {
+      rootPath: current.rootPath,
+      branch: current.gitBranch ?? 'main',
+    });
+    setSyncState(result.state);
+  }, [current]);
+
+  return { current, workspaces, ready, bootError, syncState, retrySync, replace, create, rename, refresh, openNewWindow: openWorkspaceWindow };
 }

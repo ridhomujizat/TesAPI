@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Plus } from 'lucide-react';
 import { Sidebar } from './components/layout/Sidebar';
 import { EnvironmentEditor } from './components/environment/EnvironmentEditor';
+import { SecretReviewDialog } from './components/environment/SecretReviewDialog';
 import { RequestBuilder } from './components/request/RequestBuilder';
+import { EmptyRequestState } from './components/request/EmptyRequestState';
 import { ResponseViewer } from './components/response/ResponseViewer';
 import { SaveRequestModal } from './components/SaveRequestModal';
 import { CloseTabDialog } from './components/CloseTabDialog';
 import { CreateWorkspaceModal } from './components/workspace/CreateWorkspaceModal';
 import { WorkspaceSwitchDialog } from './components/workspace/WorkspaceSwitchDialog';
+import { WorkspaceConflictBanner } from './components/workspace/WorkspaceConflictBanner';
+import { GitConflictBanner } from './components/workspace/GitConflictBanner';
+import { GitIdentityDialog } from './components/workspace/GitIdentityDialog';
+import { WorkspaceReadOnlyBanner } from './components/workspace/WorkspaceReadOnlyBanner';
+import { WorkspaceSyncBanner } from './components/workspace/WorkspaceSyncBanner';
 import { Toast, type ToastMessage } from './components/Toast';
 import { useRequestStore } from './store/requestStore';
 import { useCollectionStore } from './store/collectionStore';
@@ -16,9 +22,10 @@ import { sendRequest, friendlyError } from './lib/http';
 import { isTabDirty, normalizeForCompare } from './lib/collections';
 import { uid } from './lib/id';
 import { resolveRequest } from './lib/environments';
-import { onStorageWarning, storageProvider } from './lib/storage/localJson';
+import { storageProvider } from './lib/storage/localJson';
 import { currentSession } from './lib/workspaces/lifecycle';
 import { useWorkspaceController } from './hooks/useWorkspaceController';
+import { useWorkspaceCollaboration } from './hooks/useWorkspaceCollaboration';
 import type { HistoryEntry, SessionState, WorkspaceRecord } from './types';
 import { OPEN_VARIABLES_EVENT } from './components/VariablePopover';
 
@@ -29,17 +36,6 @@ function validUrl(url: string): boolean {
   } catch {
     return false;
   }
-}
-
-function EmptyRequestState({ onNewRequest }: { onNewRequest: () => void }) {
-  return (
-    <section className="empty-request-state">
-      <div className="empty-request-content">
-        <span className="empty-request-label">No request selected</span>
-        <button className="empty-request-primary" onClick={onNewRequest}><Plus size={12} /> New request</button>
-      </div>
-    </section>
-  );
 }
 
 export default function App() {
@@ -59,11 +55,10 @@ export default function App() {
 
   const showToast = useCallback((message: ToastMessage) => setToast(message), []);
   const workspace = useWorkspaceController(showToast);
-
-  useEffect(() => onStorageWarning((message) => showToast({ title: 'Storage warning', detail: message, tone: 'error' })), [showToast]);
+  const collaboration = useWorkspaceCollaboration(workspace.current, workspace.ready, workspace.retrySync, showToast);
 
   useEffect(() => {
-    if (!workspace.ready || !workspace.current) return;
+    if (!workspace.ready || !workspace.current || storageProvider.isReadOnly()) return;
     const save = () => {
       window.clearTimeout(sessionTimer.current);
       sessionTimer.current = window.setTimeout(() => {
@@ -77,6 +72,7 @@ export default function App() {
   }, [showToast, workspace.current?.id, workspace.ready]);
 
   const appendHistory = useCallback((entry: HistoryEntry) => {
+    if (storageProvider.isReadOnly()) return;
     void storageProvider.appendHistory(entry)
       .then(() => window.dispatchEvent(new Event('tesapi-history-updated')))
       .catch((error) => showToast({ title: 'Could not save history', detail: String(error), tone: 'error' }));
@@ -230,11 +226,24 @@ export default function App() {
 
   const closingTab = tabs.find((tab) => tab.id === closeTabId);
 
-  if (!workspace.current) return <div className="shell workspace-loading"><span className="spinner accent-spinner" /></div>;
+  if (!workspace.current) {
+    if (workspace.bootError) return <div className="shell workspace-loading"><section className="workspace-boot-error"><strong>Could not open TesAPI</strong><span>{workspace.bootError}</span><button onClick={() => window.location.reload()}>Retry</button></section></div>;
+    return <div className="shell workspace-loading"><span className="spinner accent-spinner" /></div>;
+  }
 
   return (
     <div className="shell">
-      <Sidebar currentWorkspace={workspace.current} workspaces={workspace.workspaces} onToast={showToast} onWorkspaceChange={setWorkspaceView} onCreateWorkspace={() => setCreateWorkspaceOpen(true)} onOpenWorkspace={requestWorkspaceSwitch} onOpenWorkspaceWindow={(target) => void workspace.openNewWindow(target).catch((error) => showToast({ title: 'Could not open workspace window', detail: String(error), tone: 'error' }))} onRenameWorkspace={(id, name) => workspace.rename(id, name).catch((error) => { showToast({ title: 'Could not rename workspace', detail: String(error), tone: 'error' }); })} />
+      <Sidebar currentWorkspace={workspace.current} workspaces={workspace.workspaces} onToast={showToast} onWorkspaceChange={setWorkspaceView} onCreateWorkspace={() => setCreateWorkspaceOpen(true)} onOpenWorkspace={requestWorkspaceSwitch} onOpenWorkspaceWindow={(target) => void workspace.openNewWindow(target).catch((error) => showToast({ title: 'Could not open workspace window', detail: String(error), tone: 'error' }))} onRenameWorkspace={(id, name) => {
+        if (storageProvider.isReadOnly()) {
+          showToast({ title: 'Workspace is read-only', detail: 'Upgrade TesAPI before renaming this workspace.', tone: 'error' });
+          return Promise.resolve();
+        }
+        return workspace.rename(id, name).catch((error) => { showToast({ title: 'Could not rename workspace', detail: String(error), tone: 'error' }); });
+      }} />
+      <WorkspaceConflictBanner conflict={collaboration.storageConflict} busy={collaboration.storageConflictBusy} onReload={() => void collaboration.resolveStorageConflict(false)} onKeepMine={() => void collaboration.resolveStorageConflict(true)} />
+      <WorkspaceReadOnlyBanner reason={storageProvider.readOnlyReason()} />
+      <WorkspaceSyncBanner paused={workspace.syncState === 'paused'} busy={collaboration.syncRetryBusy} onRetry={collaboration.retryPausedSync} />
+      <GitConflictBanner workspaceRoot={workspace.current.rootPath} manifest={collaboration.gitManifest} busy={collaboration.gitConflictBusy} onResolve={(file, choice) => void collaboration.resolveGitConflict(file, choice)} />
       <main className={workspaceView === 'environment' ? 'main environment-main' : `main${hasActiveTab ? '' : ' empty-request-main'}`}>
         {workspaceView === 'environment' ? <EnvironmentEditor onToast={showToast} /> : hasActiveTab ? <>
           <RequestBuilder onSend={onSend} onCancel={onCancel} onToast={showToast} onSave={onSave} onCloseTab={requestClose} />
@@ -277,6 +286,8 @@ export default function App() {
       />
       <CreateWorkspaceModal open={createWorkspaceOpen} onCancel={() => setCreateWorkspaceOpen(false)} onCreate={workspace.create} onCreated={(created) => { setCreateWorkspaceOpen(false); requestWorkspaceSwitch(created); }} />
       <WorkspaceSwitchDialog open={!!switchTarget && !saveForWorkspaceSwitch} workspaceName={switchTarget?.name ?? ''} saving={switchSaving} onCancel={() => setSwitchTarget(null)} onDiscard={() => { if (switchTarget) void performWorkspaceSwitch(switchTarget, true); }} onSaveAll={() => void saveAllForWorkspaceSwitch()} />
+      <SecretReviewDialog review={collaboration.secretReview} busy={collaboration.secretReviewBusy} error={collaboration.secretReviewError} onComplete={(choice) => void collaboration.completeSecretReview(choice)} />
+      <GitIdentityDialog open={collaboration.identityOpen} busy={collaboration.identityBusy} error={collaboration.identityError} onSave={(name, email) => void collaboration.saveIdentity(name, email)} />
       <Toast message={toast} onClose={() => setToast(null)} />
     </div>
   );

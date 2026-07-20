@@ -3,8 +3,12 @@ import type { SessionState, WorkspaceRecord } from '../../types';
 import { useCollectionStore } from '../../store/collectionStore';
 import { useEnvironmentStore } from '../../store/environmentStore';
 import { useRequestStore } from '../../store/requestStore';
-import { registerWorkspaceWindow, setSetting, setWorkspaceWindowTitle, touchLastOpened } from '../registry';
+import { getSetting, registerWorkspaceWindow, setSetting, setWorkspaceWindowTitle, touchLastOpened } from '../registry';
 import { storageProvider } from '../storage/localJson';
+
+export type WorkspaceSyncState = 'idle' | 'synced' | 'paused' | 'conflicted';
+interface GitSyncResult { state: WorkspaceSyncState }
+export interface WorkspaceLoadResult { warning: string | null; syncState: WorkspaceSyncState }
 
 export function currentSession(): SessionState {
   const request = useRequestStore.getState();
@@ -18,7 +22,7 @@ export function currentSession(): SessionState {
 }
 
 export async function saveCurrentSession(): Promise<void> {
-  if (storageProvider.currentWorkspace()) await storageProvider.saveSession(currentSession());
+  if (storageProvider.currentWorkspace() && !storageProvider.isReadOnly()) await storageProvider.saveSession(currentSession());
 }
 
 export function resetWorkspaceStores(): void {
@@ -27,13 +31,24 @@ export function resetWorkspaceStores(): void {
   useEnvironmentStore.getState().reset();
 }
 
-export async function loadWorkspace(workspace: WorkspaceRecord): Promise<string | null> {
+export async function loadWorkspace(workspace: WorkspaceRecord): Promise<WorkspaceLoadResult> {
+  if (storageProvider.currentWorkspace()) await storageProvider.flush();
   resetWorkspaceStores();
   storageProvider.configure(workspace);
+  await storageProvider.inspectCompatibility();
   let warning: string | null = null;
-  if (workspace.syncType === 'git') {
+  let syncState: WorkspaceSyncState = 'idle';
+  const identity = workspace.syncType === 'git'
+    ? await getSetting<{ name: string; email: string }>('git_identity')
+    : null;
+  if (workspace.syncType === 'git' && identity && !storageProvider.isReadOnly()) {
+    await invoke('git_set_identity', { rootPath: workspace.rootPath, name: identity.name, email: identity.email });
+    storageProvider.enableGitSync();
+  }
+  if (workspace.syncType === 'git' && identity && !storageProvider.isReadOnly()) {
     try {
-      await invoke('git_pull_workspace', { rootPath: workspace.rootPath, branch: workspace.gitBranch ?? 'main' });
+      const result = await invoke<GitSyncResult>('git_pull_workspace', { rootPath: workspace.rootPath, branch: workspace.gitBranch ?? 'main' });
+      syncState = result.state;
     } catch (error) {
       warning = String(error);
     }
@@ -51,5 +66,5 @@ export async function loadWorkspace(workspace: WorkspaceRecord): Promise<string 
     registerWorkspaceWindow(workspace.id),
     setWorkspaceWindowTitle(workspace.name),
   ]);
-  return warning;
+  return { warning, syncState };
 }

@@ -9,6 +9,7 @@ interface State {
   file: EnvironmentsFile;
   selectedEnvironmentId: string | null;
   initialize: () => Promise<void>;
+  reload: () => Promise<void>;
   createEnvironment: (name: string, initial?: { key: string; value: string }, activate?: boolean) => Promise<string>;
   duplicateEnvironment: (id: string) => Promise<string>;
   renameEnvironment: (id: string, name: string) => Promise<void>;
@@ -22,6 +23,8 @@ interface State {
 
 const empty: EnvironmentsFile = { schemaVersion: 1, activeEnvironmentId: null, environments: [] };
 let saveTimer = 0;
+
+const environmentRows = (rows: KeyValue[]): KeyValue[] => withTrailingBlank(rows).map((row) => ({ ...row, secret: row.secret !== false }));
 
 function saveSoon(file: EnvironmentsFile): void {
   window.clearTimeout(saveTimer);
@@ -37,11 +40,15 @@ export const useEnvironmentStore = create<State>((set, get) => ({
     const file = await storageProvider.loadEnvironments();
     set({ file, selectedEnvironmentId: file.activeEnvironmentId });
   },
+  reload: async () => {
+    const file = await storageProvider.loadEnvironments();
+    set({ file, selectedEnvironmentId: file.activeEnvironmentId ?? get().selectedEnvironmentId });
+  },
   createEnvironment: async (name, initial, activate = true) => {
     const environment = {
       id: uid(),
       name: name.trim() || 'Environment',
-      variables: initial?.key ? [{ ...emptyRow(), key: initial.key, value: initial.value, enabled: true }, emptyRow()] : [emptyRow()],
+      variables: initial?.key ? [{ ...emptyRow(), key: initial.key, value: initial.value, enabled: true, secret: true }, { ...emptyRow(), secret: true }] : [{ ...emptyRow(), secret: true }],
     };
     const file = { ...get().file, activeEnvironmentId: activate ? environment.id : get().file.activeEnvironmentId, environments: [...get().file.environments, environment] };
     await storageProvider.saveEnvironments(file);
@@ -84,7 +91,7 @@ export const useEnvironmentStore = create<State>((set, get) => ({
     set({ file });
   },
   setVariables: async (id, variables) => {
-    const file = { ...get().file, environments: get().file.environments.map((environment) => environment.id === id ? { ...environment, variables: withTrailingBlank(variables) } : environment) };
+    const file = { ...get().file, environments: get().file.environments.map((environment) => environment.id === id ? { ...environment, variables: environmentRows(variables) } : environment) };
     set({ file });
     saveSoon(file);
   },
@@ -96,7 +103,7 @@ export const useEnvironmentStore = create<State>((set, get) => ({
         const existing = environment.variables.find((item) => item.key.trim() === key.trim());
         const variables = existing
           ? environment.variables.map((item) => item.id === existing.id ? { ...item, key: key.trim(), value, enabled: true } : item)
-          : [...environment.variables.filter((item) => item.key || item.value || item.valueType === 'file'), { ...emptyRow(), key: key.trim(), value, enabled: true }, emptyRow()];
+          : [...environment.variables.filter((item) => item.key || item.value || item.valueType === 'file'), { ...emptyRow(), key: key.trim(), value, enabled: true, secret: true }, { ...emptyRow(), secret: true }];
         return { ...environment, variables };
       }),
     };

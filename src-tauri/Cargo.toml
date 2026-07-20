@@ -27,3 +27,4 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 tokio = { version = "1", features = ["time"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 git2 = "0.20"
+notify = "8"

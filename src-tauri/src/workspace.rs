@@ -8,6 +8,18 @@ use serde_json::Value;
 
 use crate::git_sync;
 
+const GITIGNORE_ENTRIES: &[&str] = &[
+    "*.local.json",
+    "history.ndjson*",
+    "session.json*",
+    "*.bak",
+    "*.corrupt-*",
+    "*.migrated",
+    "*.theirs.json",
+    "*.base.json",
+    ".tesapi-conflict.json",
+];
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceFile {
@@ -72,6 +84,78 @@ pub fn write_descriptor(root: &Path, descriptor: &WorkspaceFile) -> Result<(), S
     crate::storage::atomic_write_at(&descriptor_path(root), &contents)
 }
 
+pub fn merge_gitignore(root: &Path) -> Result<(), String> {
+    let path = root.join(".gitignore");
+    let existing = fs::read_to_string(&path).unwrap_or_default();
+    let missing = GITIGNORE_ENTRIES
+        .iter()
+        .filter(|entry| !existing.lines().any(|line| line.trim() == **entry))
+        .copied()
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let mut contents = existing;
+    if !contents.is_empty() && !contents.ends_with('\n') {
+        contents.push('\n');
+    }
+    if !contents.is_empty() {
+        contents.push('\n');
+    }
+    contents.push_str("# TesAPI machine-local state\n");
+    contents.push_str(&missing.join("\n"));
+    contents.push('\n');
+    crate::storage::atomic_write_at(&path, &contents)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::merge_gitignore;
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    #[test]
+    fn merge_gitignore_preserves_custom_entries() {
+        let root = std::env::temp_dir().join(format!(
+            "tesapi-ignore-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join(".gitignore");
+        fs::write(&path, "# team\ncustom.tmp\n").unwrap();
+        merge_gitignore(&root).unwrap();
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("custom.tmp"));
+        assert!(contents.contains("*.local.json"));
+        let before = contents.clone();
+        merge_gitignore(&root).unwrap();
+        assert_eq!(fs::read_to_string(path).unwrap(), before);
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+#[tauri::command]
+pub async fn prepare_workspace_gitignore(
+    root_path: String,
+    state: tauri::State<'_, crate::workspace_io::WorkspaceQueueState>,
+) -> Result<(), String> {
+    let root = PathBuf::from(root_path);
+    let lock = state.lock_for(&root)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = lock
+            .lock()
+            .map_err(|_| "Workspace queue lock poisoned".to_string())?;
+        merge_gitignore(&root)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 fn is_empty(path: &Path) -> Result<bool, String> {
     Ok(!path.exists()
         || fs::read_dir(path)
@@ -87,6 +171,9 @@ pub fn create_folder(mut descriptor: WorkspaceFile, root: &Path) -> Result<Works
     let attaching = root.exists() && !is_empty(root)?;
     if attaching {
         let existing = read_descriptor(root)?;
+        if existing.schema_version > 1 {
+            return Ok(existing);
+        }
         if !existing.id.is_empty() {
             descriptor.id = existing.id;
         }
@@ -111,11 +198,7 @@ pub fn create_folder(mut descriptor: WorkspaceFile, root: &Path) -> Result<Works
     }
 
     if descriptor.sync_type == "git" {
-        fs::write(
-            root.join(".gitignore"),
-            "history.ndjson\nhistory.ndjson.bak\nsession.json\nsession.json.bak\n",
-        )
-        .map_err(|error| error.to_string())?;
+        merge_gitignore(root)?;
         let repo = match git2::Repository::open(root) {
             Ok(repo) => repo,
             Err(_) => git_sync::init_repo(
