@@ -11,6 +11,10 @@
 
 TesAPI keeps API collections on your computer, gives each workspace a portable file structure, and can synchronize that structure through Git. Its MCP integration lets Claude, Codex, Cursor, and other compatible AI clients inspect or draft requests without silently exposing secrets or changing data.
 
+## App Preview
+
+![TesAPI showing a Commerce API workspace with collections, query parameters, environment variables, and Git integration](screenshots/tesapi-showcase.png)
+
 ## Features
 
 - Build and send HTTP requests with params, headers, authentication, JSON, form-data, URL-encoded bodies, and file uploads.
