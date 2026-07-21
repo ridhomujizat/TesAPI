@@ -1,70 +1,91 @@
-# TesAPI
+<div align="center">
+  <img src="src-tauri/icons/tesapi-logo.svg" width="112" height="112" alt="TesAPI logo">
+  <h1>TesAPI</h1>
+  <p>A local-first desktop API client with Git workspaces and safe MCP access for AI tools.</p>
 
-A personal desktop API client built with Tauri, React, and TypeScript.
+  [![Latest release](https://img.shields.io/github/v/release/ridhomujizat/TesAPI?display_name=tag&sort=semver)](https://github.com/ridhomujizat/TesAPI/releases/latest)
+  [![Release build](https://github.com/ridhomujizat/TesAPI/actions/workflows/release.yml/badge.svg)](https://github.com/ridhomujizat/TesAPI/actions/workflows/release.yml)
+  ![macOS](https://img.shields.io/badge/platform-macOS-111111?logo=apple)
+  ![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
+</div>
 
-## cURL import/export
+TesAPI keeps API collections on your computer, gives each workspace a portable file structure, and can synchronize that structure through Git. Its MCP integration lets Claude, Codex, Cursor, and other compatible AI clients inspect or draft requests without silently exposing secrets or changing data.
 
-Phase 2 uses the pure TypeScript parser in `src/lib/curl/`. It accepts Bash/POSIX, Windows `cmd.exe`, and PowerShell cURL copied from browser developer tools, including caret/backtick continuations, quoted headers, cookies, JSON, form-data, basic auth, and bearer auth. Unknown cURL-only flags are tolerated with warnings instead of crashing the request builder.
+## Features
 
-The request builder detects cURL pasted into the URL field and copies the active request back to a multiline Bash cURL command. There is no runtime cURL parsing dependency.
+- Build and send HTTP requests with params, headers, authentication, JSON, form-data, URL-encoded bodies, and file uploads.
+- Edit JSON request and response bodies with CodeMirror syntax highlighting.
+- Import browser cURL commands from Bash, PowerShell, or Windows Command Prompt, then export requests back to cURL.
+- Import Postman collections into the current workspace.
+- Organize requests in collections and folders, keep request history, and save multiple example responses.
+- Manage environments with inline `{{variable}}` highlighting and local secret values.
+- Create local or Git-backed workspaces with branches, commits, pull, push, diffs, and recoverable conflict handling.
+- Connect AI clients through the bundled MCP server with scoped access, approval prompts, secret redaction, and activity logs.
+- Check for signed TesAPI updates published through GitHub Releases.
 
-Run the parser checks directly with Node 22+:
+## Download
 
-```sh
-node src/lib/curl/__tests__/normalize.test.ts
-node src/lib/curl/__tests__/tokenize.test.ts
-node src/lib/curl/__tests__/parse.test.ts
-node src/lib/curl/__tests__/export.test.ts
+Download the latest build from [GitHub Releases](https://github.com/ridhomujizat/TesAPI/releases/latest):
+
+| Mac | File |
+| --- | --- |
+| Apple Silicon (M1, M2, M3, M4, or newer) | File ending in `_aarch64.dmg` |
+| Intel | File ending in `_x64.dmg` |
+
+Open the DMG and drag TesAPI into Applications. The current release is not Apple-notarized, so macOS may block the first launch. Control-click TesAPI, choose **Open**, then confirm **Open**. You can also allow it from **System Settings → Privacy & Security**.
+
+## MCP Integration
+
+Open **Settings → MCP Server** to configure a supported client:
+
+- Claude Desktop
+- Claude Code
+- Codex
+- Cursor
+
+Choose the capability granted to each workspace and client. Read access can inspect collections and requests; higher capabilities can create drafts, save changes, or execute requests. Risky operations remain subject to TesAPI's safety policy and approval UI, and secret values are redacted before data is returned to an AI client.
+
+Keep TesAPI running while an MCP client is connected. The bundled `tesapi-mcp` process is only a local bridge; workspace access, policy checks, approvals, storage, and HTTP execution stay inside TesAPI.
+
+## Local-First Storage
+
+- Workspace collections and requests are stored as portable files in the workspace folder you choose.
+- App settings, the workspace registry, and MCP activity are stored locally in the Tauri app-data directory.
+- Secret environment values remain in machine-local files and are excluded from workspace Git history.
+- TesAPI has no hosted account or cloud service. Data reaches a remote only when you send an API request or configure Git synchronization.
+
+## Development
+
+Requirements:
+
+- Node.js 22+
+- Rust stable
+- The [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your platform
+
+```bash
+git clone https://github.com/ridhomujizat/TesAPI.git
+cd TesAPI
+npm install
+npm run tauri dev
 ```
 
-## Recommended IDE Setup
+Create a production bundle with:
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
-
-## Phase 3 local storage
-
-TesAPI stores one local workspace under the Tauri app-data directory:
-
-```text
-tesapi/
-├── workspaces.json
-└── workspaces/<workspace-id>/
-    ├── workspace.json
-    ├── collections/<collection-id>.json
-    ├── history.ndjson
-    ├── session.json
-    └── environments.json
+```bash
+npm run tauri build
 ```
 
-All persistence goes through `StorageProvider`; the current implementation is `LocalJsonProvider`. Collection files use atomic Rust writes with a `.bak` copy, history is capped at 1,000 entries, and malformed files are quarantined before backup recovery. New request tabs remain drafts until the Save action creates a collection node. Environment variables use `{{variable}}` placeholders and resolve only when sending or exporting cURL.
+Run the main checks with:
 
-## Phase 4 variable UX
-
-Environment placeholders are highlighted throughout the request builder: green when the active environment resolves them and red dashed when the environment is missing, the key is absent, or the row is disabled. URL, params, headers, form-data, URL-encoded, auth, and raw CodeMirror body fields all use the shared token grammar from `src/lib/variables.ts`.
-
-Click or hover a token to inspect it, edit a resolved value, or add a missing value to an environment. `Cmd/Ctrl+.` opens the token at the caret. The unresolved badge beside Send opens the complete Variables in Request panel, and send-time substitution remains unchanged.
-
-Any new request text field that supports `{{variable}}` placeholders should use `VariableInput`; raw CodeMirror request editors should pass a status map to `CodeEditor`.
-
-## Phase 5 workspaces
-
-TesAPI now keeps the workspace registry and app settings in `tesapi/app.db` using SQLite WAL mode. Existing `workspaces.json` installs migrate once to the database and retain `workspaces.json.migrated` as a backup. Request data is not moved into SQLite: every workspace still owns portable spread files under its configured folder.
-
-The sidebar workspace switcher can replace the current window or open a workspace in a separate Tauri window. Replacing a workspace protects dirty tabs with Save all / Discard / Cancel and restores the destination workspace's own session, collections, history, and environments.
-
-New workspaces can be local or Git-backed. Git workspaces initialize or clone a repository and use the conflict-safe Phase 5.5 sync loop on pull/open. History and session files stay machine-local through the generated `.gitignore`; Cloud remains a disabled "Soon" option.
-
-## Phase 6 Git workflow
-
-Git workspaces expose a branch badge in the workspace bar. Its menu provides status, history, remotes, branches, push/pull, commit, and reset actions. Manual commits are the default; "Auto-commit on save" is an optional per-workspace setting.
-
-The commit sheet groups changed request files by collection, supports subset commits and per-entity discard, and renders normalized side-by-side JSON field diffs. Git operations are serialized through the Rust workspace queue, and worktree-changing actions flush writes and reload the frontend stores before returning control.
-
-Fetch, push, and remote connection checks run through the installed system `git` CLI, allowing TesAPI to reuse existing credential helpers, SSH agents, and `gh auth` configuration. Local status, commits, diffs, merges, and conflict handling remain implemented with `git2`.
-
-Run the Phase 6 mapping and diff checks with Node 22+:
-
-```sh
-node src/lib/git/status.test.ts
-node src/lib/git/lineDiff.test.ts
+```bash
+npm run build
+cargo test --manifest-path src-tauri/Cargo.toml
 ```
+
+## Contributing
+
+Issues and pull requests are welcome. For substantial changes, open an issue first so the behavior and security impact can be agreed before implementation. Please keep changes focused, preserve the local-first storage model, and include a small regression check for non-trivial logic.
+
+## Security
+
+Do not include API keys, tokens, cookies, authorization headers, or local environment files in bug reports. If you find a vulnerability that could expose secrets or execute requests without approval, report it privately to the repository owner instead of opening a public issue.
